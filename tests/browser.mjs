@@ -1,0 +1,40 @@
+import { chromium } from 'playwright';
+
+import fs from 'node:fs/promises';
+import path from 'node:path';
+const browser=await chromium.launch({channel:process.env.TEST_BROWSER_CHANNEL||'chrome',headless:true,args:['--no-sandbox']});
+const page=await browser.newPage();
+page.on('console',msg=>console.log('browser:',msg.type(),msg.text().slice(0,500)));
+page.on('pageerror',error=>console.error('PAGE ERROR',error));
+await page.goto(process.env.TEST_URL||'http://127.0.0.1:5173');
+const monitor=setInterval(async()=>console.log('STATUS',await page.locator('#runtime-status').textContent(),(await page.locator('#logs').textContent()).slice(-600)),15000);
+try {
+ await page.locator('input[webkitdirectory]').setInputFiles(path.resolve('tests/fixtures/project'));
+ await page.locator('summary').filter({hasText:'project'}).click();
+ await page.getByRole('treeitem',{name:/model.py/}).click();
+ await page.locator('#run').click();
+ await page.waitForFunction(()=>document.querySelector('#model-state').textContent==='result', null, {timeout:240000});
+ if(await page.locator('#error-banner').isVisible())throw new Error(await page.locator('#logs').textContent());
+ console.log('UI rendered',await page.locator('#elapsed').textContent());
+ const downloadPromise=page.waitForEvent('download');
+ await page.locator('#step').click();
+ const download=await downloadPromise;
+ console.log('STEP download',download.suggestedFilename());
+ await page.getByRole('tab',{name:'Code',exact:true}).click();
+ await page.locator('#editor .view-lines').click();
+ await page.keyboard.press('Meta+a');
+ await page.keyboard.insertText('result = 42');
+ await page.locator('#run').click();
+ await page.locator('#error-banner').waitFor({state:'visible'});
+ console.log('Invalid result correctly rejected');
+ await page.getByRole('tab',{name:'Code',exact:true}).click();
+ await page.locator('#editor .view-lines').click();
+ await page.keyboard.press('Meta+a');
+ await page.keyboard.insertText('while True: pass');
+ await page.locator('#run').click();
+ await page.locator('#cancel').click();
+ await page.waitForFunction(()=>!document.querySelector('#run').disabled);
+ console.log('Cancellation released UI');
+ await fs.mkdir('test-artifacts',{recursive:true});
+ await page.screenshot({path:'test-artifacts/browser.png'});
+} finally {clearInterval(monitor);await browser.close();}

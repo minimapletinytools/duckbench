@@ -1,0 +1,6 @@
+[project]
+name = "build1234-runner"
+version = "0.1.0"
+license = "Apache-2.0"
+requires-python = ">=3.12,<3.14"
+dependencies = ["build123d==0.13.0", "ocp-tessellate==3.6.3"]

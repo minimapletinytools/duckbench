@@ -1,0 +1,3 @@
+const {contextBridge,ipcRenderer}=require('electron');
+const subscribe=(channel,callback)=>{const fn=(_,value)=>callback(value);ipcRenderer.on(channel,fn);return()=>ipcRenderer.removeListener(channel,fn);};
+contextBridge.exposeInMainWorld('desktop',{openFolder:()=>ipcRenderer.invoke('workspace:open'),listFiles:directory=>ipcRenderer.invoke('workspace:list',directory),readFile:filename=>ipcRenderer.invoke('workspace:read',filename),request:request=>ipcRenderer.invoke('runner:request',request),cancel:()=>ipcRenderer.invoke('runner:cancel'),open:()=>ipcRenderer.invoke('file:open'),save:data=>ipcRenderer.invoke('file:save',data),onLog:callback=>subscribe('runner:log',callback),onFileChanged:callback=>subscribe('file:changed',callback)});

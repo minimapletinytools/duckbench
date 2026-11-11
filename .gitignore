@@ -1,0 +1,14 @@
+node_modules/
+.venv/
+dist/
+release/
+__pycache__/
+*.pyc
+test-artifacts/
+
+.DS_Store
+.env
+.env.*
+# Regenerated from installed dependencies before every build.
+public/about.html
+public/licenses/

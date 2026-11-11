@@ -1,0 +1,15 @@
+Duckbench
+Copyright 2026 Duckbench contributors
+
+Original Duckbench code is licensed under the Apache License, Version 2.0.
+Third-party components retain their respective copyright notices and licenses;
+they are not relicensed under the Duckbench license.
+
+CAD visualization uses three-cad-viewer by Bernhard Walter (MIT).
+Geometry conversion uses ocp-tessellate by Bernhard Walter (Apache-2.0).
+CAD modeling uses build123d by the build123d Contributors (Apache-2.0).
+The editor uses Monaco Editor by Microsoft (MIT).
+Browser CAD execution uses Pyodide and OCP.wasm by Yeicor and contributors.
+
+The About page contains upstream license texts and attribution notices,
+including build123d's NOTICE. Generated copies are also shipped in licenses/.
