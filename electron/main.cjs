@@ -28,7 +28,7 @@ function watch(filename){
 ipcMain.handle('runner:request',(_,request)=>{start();const id=++next;return new Promise((resolve,reject)=>{pending.set(id,{resolve,reject});child.stdin.write(JSON.stringify({...request,id})+'\n');});});
 ipcMain.handle('runner:cancel',()=>stop());
 ipcMain.handle('file:open',async()=>{const {canceled,filePaths}=await dialog.showOpenDialog(win,{filters:[{name:'Python',extensions:['py']}],properties:['openFile']});if(canceled)return null;const filename=filePaths[0];watch(filename);return {filename,code:fs.readFileSync(filename,'utf8')};});
-ipcMain.handle('file:save',async(_,data)=>{let filename=data.filename;if(!path.isAbsolute(filename)||filename!==watchedFile){const picked=await dialog.showSaveDialog(win,{defaultPath:path.basename(filename||'model.py'),filters:[{name:'Python',extensions:['py']}]});if(picked.canceled)return null;filename=picked.filePath;}fs.writeFileSync(filename,data.code);watch(filename);return filename;});
+ipcMain.handle('file:save',async(_,data)=>{let filename=data.filename;if(!path.isAbsolute(filename)||filename!==watchedFile){const picked=await dialog.showSaveDialog(win,{defaultPath:path.basename(filename||'model.py'),filters:[{name:'Python',extensions:['py']}]});if(picked.canceled)return null;filename=picked.filePath;}fs.writeFileSync(filename,data.code);filename=fs.realpathSync(filename);watch(filename);return filename;});
 function workspacePath(filename){
  if(!workspace)throw new Error('Open a folder first.');
  const resolved=fs.realpathSync(filename);

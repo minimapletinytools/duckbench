@@ -7,33 +7,26 @@ import {createRuntime} from './runtime.js';
 import {createViewerFeedback} from './viewer-feedback.js';
 import {createFileActions} from './file-actions.js';
 
-const EXAMPLE=`from build123d import *
+import EXAMPLE from '../examples/duck.py?raw';
 
-# Dimensions in millimeters.
-plate = Box(60, 40, 12)
-hole = Cylinder(9, 14)
-
-result = plate - hole
-result.label = "Mounting plate"
-`;
 const $=id=>document.getElementById(id);
 const element=(className,html)=>{const node=document.createElement('div');node.className=className;node.innerHTML=html;return node;};
 const shell=new PanelShell($('app'));
 const disposeAbout=installAbout();
 $('toolbar').innerHTML='<button id="open-folder">Open folder</button><button id="open">Open file</button><button id="save">Save</button><span class="toolbar-divider"></span><button id="run" class="primary" disabled>▶ Run</button><button id="cancel" disabled>■ Stop</button><button id="step" disabled>STEP ↓</button><button id="stl" disabled>STL ↓</button>';
-const explorer=element('explorer-panel','<div class="panel-toolbar"><strong>EXPLORER</strong><button id="example" title="Open example">＋ Example</button></div><div id="workspace-name" class="workspace-name">OPEN FILES</div><div id="file-tree" class="explorer-tree" role="tree"></div><div class="explorer-hint">Open a folder to browse your project.</div>');
-const source=element('editor-panel','<div class="panel-toolbar"><span id="filename">plate.py</span><span id="dirty" hidden>●</span><span class="panel-spacer"></span><span>Python</span></div><div id="editor" class="monaco-host"></div>');
+const explorer=element('explorer-panel','<div class="panel-toolbar"><strong>EXPLORER</strong><button id="new-file" class="new-file-button" title="Create a blank Python file"><span aria-hidden="true">＋</span> New file</button></div><div id="workspace-name" class="workspace-name">OPEN FILES</div><div id="file-tree" class="explorer-tree" role="tree"></div><div class="explorer-hint">Open a folder to browse your project.</div>');
+const source=element('editor-panel','<div class="panel-toolbar"><span id="filename">duck.py</span><span id="dirty" hidden>●</span><span class="panel-spacer"></span><span>Python</span></div><div id="editor" class="monaco-host"></div>');
 const preview=element('viewer-panel','<div class="panel-toolbar"><span id="model-state">No model yet</span><span class="panel-spacer"></span><span id="elapsed"></span></div><div class="viewport-wrap"><div id="cad-view"></div><div id="empty-state"><strong>build123d</strong><p>Assign your model to <code>result</code>, then run.</p><button id="empty-run" class="primary">▶ Run model</button></div></div><div id="error-banner" role="alert" hidden><span id="error-message"></span><button id="dismiss-error" aria-label="Dismiss error">×</button></div>');
 const consolePanel=element('console-panel','<div class="panel-toolbar"><strong>OUTPUT</strong><span class="panel-spacer"></span><button id="clear-log">Clear</button></div><pre id="logs"></pre>');
 shell.register({id:'explorer',title:'Explorer',slot:'left',element:explorer});
 shell.register({id:'source',title:'Code',slot:'center',element:source});
-shell.register({id:'preview',title:'3D Preview',slot:'center',element:preview});
+shell.register({id:'preview',title:'Preview',slot:'center',element:preview});
 shell.register({id:'console',title:'Output',slot:'bottom',element:consolePanel});
 shell.activate('preview');
 $('statusbar').innerHTML='<span id="runtime-status" role="status">Ready to run</span><span class="panel-spacer"></span><span id="position">Python</span><span class="status-text">result → model</span>';
 const fileInput=document.createElement('input');fileInput.type='file';fileInput.accept='.py';fileInput.hidden=true;document.body.append(fileInput);
 const folderInput=document.createElement('input');folderInput.type='file';folderInput.webkitdirectory=true;folderInput.multiple=true;folderInput.hidden=true;document.body.append(folderInput);
-let filename='plate.py',initial=EXAMPLE;
+let filename='duck.py',initial=EXAMPLE;
 try{filename=localStorage.getItem('build1234.filename')||filename;initial=localStorage.getItem('build1234.code')??initial;}catch{}
 let changing=false,runtime,busy=false,exporting=false,canExport=false,hasModel=false,generation=0,builtFilename=filename;
 let builtSnapshot=null,projectRevision=0,buildNeedsSetup=false,progressMessage='Building model…',deleting=false;
@@ -53,9 +46,10 @@ function projectFiles(){
 }
 function snapshot(){return JSON.stringify([filename,editor.getValue(),projectRevision,window.desktop?null:projectFiles()]);}
 function updatePreview(){feedback.update({busy,hasModel,needsSetup:buildNeedsSetup,stale:!canExport||snapshot()!==builtSnapshot,disabled:!runtime||exporting||deleting,message:progressMessage});}
-function dirty(){const doc=documents.get(filename);return doc.code!==doc.saved;}
+function dirty(){const doc=documents.get(filename);return doc.untitled||doc.code!==doc.saved;}
 function sync(){
  $('filename').textContent=filename.split(/[\\/]/).pop();$('dirty').hidden=!dirty();
+ shell.setTitle('source',$('filename').textContent,filename);
  for(const row of explorer.querySelectorAll('.file-row')){row.classList.toggle('selected',row.dataset.path===filename);row.setAttribute('aria-selected',String(row.dataset.path===filename));}
  try{localStorage.setItem('build1234.filename',filename);localStorage.setItem('build1234.code',editor.getValue());}catch{}
  updatePreview();
@@ -94,9 +88,10 @@ function load(data,{activate=true}={}){
  if(activate)shell.activate('source');sync();
  if(!workspace)renderTree();
 }
+function inWorkspace(path){return !!workspace&&(window.desktop?path.replaceAll('\\','/').startsWith(workspace.root.replaceAll('\\','/')+'/'):Object.hasOwn(browserFiles,path));}
 function fileRow(entry,depth){
  const row=document.createElement('button');row.className='file-row';row.dataset.path=entry.path;row.setAttribute('role','treeitem');row.style.paddingLeft=`${12+depth*14}px`;row.textContent=(entry.name.endsWith('.py')?'◇  ':'·  ')+entry.name;
- row.onclick=async()=>{try{const existing=documents.get(entry.path);if(window.desktop&&workspace)load(await window.desktop.readFile(entry.path));else if(existing)load({filename:entry.path,code:existing.code});else load({filename:entry.path,code:browserFiles[entry.path]??''});}catch(e){error(e);}};
+ row.onclick=async()=>{try{const existing=documents.get(entry.path);if(window.desktop&&inWorkspace(entry.path))load(await window.desktop.readFile(entry.path));else if(existing)load({filename:entry.path,code:existing.code});else load({filename:entry.path,code:browserFiles[entry.path]??''});}catch(e){error(e);}};
  fileActions.bind(row,entry);
  return row;
 }
@@ -112,7 +107,9 @@ function appendEntries(parent,entries,depth=0){
 function renderTree(){
  expandedFolders=new Set([...$('file-tree').querySelectorAll('details[open]')].map(node=>node.dataset.path));
  $('file-tree').replaceChildren();
- appendEntries($('file-tree'),workspace?treeEntries:[...documents.keys()].map(path=>({name:path.split(/[\\/]/).pop(),path})));
+ const loose=[...documents.keys()].filter(path=>!inWorkspace(path));
+ appendEntries($('file-tree'),loose.map(path=>({name:path.split(/[\\/]/).pop(),path})));
+ if(workspace)appendEntries($('file-tree'),treeEntries);
  $('workspace-name').textContent=workspace?.name||'OPEN FILES';explorer.querySelector('.explorer-hint').hidden=!!workspace;sync();
 }
 async function removeFile(path){
@@ -150,12 +147,18 @@ $('open').onclick=async()=>{try{if(window.desktop)load(await window.desktop.open
 fileInput.onchange=async()=>{const file=fileInput.files[0];if(file)load({filename:file.name,code:await file.text()});fileInput.value='';};
 function download(data,name,type){const url=URL.createObjectURL(new Blob([data],{type}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 async function save(){try{
- const code=editor.getValue();if(window.desktop){const target=await window.desktop.save({filename,code});if(!target)return;documents.delete(filename);filename=target;documents.set(filename,{code,saved:code});editor.setFilename(filename);}
- else {download(code,filename.split('/').pop(),'text/x-python');documents.get(filename).saved=code;if(workspace)browserFiles[filename]=code;}
+ const code=editor.getValue();if(window.desktop){const target=await window.desktop.save({filename,code});if(!target)return;documents.delete(filename);filename=target;documents.set(filename,{code,saved:code});editor.setFilename(filename);if(workspace)treeEntries=await window.desktop.listFiles(workspace.root);}
+ else {download(code,filename.split('/').pop(),'text/x-python');documents.get(filename).saved=code;documents.get(filename).untitled=false;if(workspace){browserFiles[filename]=code;treeEntries=browserTree(browserFiles);}}
  sync();renderTree();status('Saved');
 }catch(e){error(e);}}
 $('save').onclick=save;$('run').onclick=run;$('empty-run').onclick=run;$('cancel').onclick=cancel;
-$('example').onclick=()=>load({filename:'example.py',code:EXAMPLE});
+$('new-file').onclick=()=>{
+ const names=new Set([...documents.keys(),...Object.keys(browserFiles)].map(path=>path.split(/[\\/]/).pop()));
+ let name='untitled.py',number=2;
+ while(names.has(name))name=`untitled-${number++}.py`;
+ documents.set(name,{code:'',saved:'',untitled:true});
+ load({filename:name,code:''});renderTree();editor.focus();status('New file — save to choose a location');
+};
 $('dismiss-error').onclick=()=>{$('error-banner').hidden=true;};$('clear-log').onclick=()=>{$('logs').textContent='';};
 for(const format of ['step','stl'])$(format).onclick=async()=>{if(!canExport||busy||exporting)return;exporting=true;buttons();try{download(await runtime.exportModel(format),builtFilename.split(/[\\/]/).pop().replace(/\.py$/i,'')+'.'+format,'application/octet-stream');}catch(e){error(e);}finally{exporting=false;buttons();}};
 document.addEventListener('keydown',event=>{if(document.querySelector('dialog[open]'))return;if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();run();}if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();save();}},true);

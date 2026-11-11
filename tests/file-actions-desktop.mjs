@@ -50,9 +50,18 @@ try{
  await page.getByRole('treeitem',{name:/model.py/}).waitFor({state:'detached'});
  assert.equal(await fs.readFile(path.join(temporary,'trashed.py'),'utf8'),code+'# Changed on disk\n');
  assert.equal(await fs.readFile(outside,'utf8'),code);
- assert.equal(await page.locator('#filename').textContent(),'plate.py');
- await page.getByRole('tab',{name:'3D Preview',exact:true}).click();
+ assert.equal(await page.locator('#filename').textContent(),'duck.py');
+ await page.locator('#tab-preview').click();
  assert.ok(await page.locator('#refresh-preview').isVisible());
+ const created=path.join(workspace,'new.py');
+ await app.evaluate(({dialog},filePath)=>{dialog.showSaveDialog=async()=>({canceled:false,filePath});},created);
+ await page.locator('#new-file').click();
+ await page.keyboard.insertText(code);
+ await page.locator('#save').click();
+ await page.getByRole('treeitem',{name:/new.py/}).waitFor();
+ assert.equal(await page.locator('#tab-source').textContent(),'new.py');
+ assert.equal(await fs.readFile(created,'utf8'),code);
+ assert.equal(await page.locator('#dirty').isVisible(),false);
  console.log('Desktop: disk-change refresh, keyboard menu, cancellation, Trash, and deletion boundaries passed.');
  }catch(error){console.error(await (await app.firstWindow()).locator('#logs').textContent());throw error;}
  finally{await app.close();await fs.rm(temporary,{recursive:true,force:true});}

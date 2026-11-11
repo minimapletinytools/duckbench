@@ -4,9 +4,12 @@ import './about.css';
 export function installAbout() {
   const button = document.createElement('button');
   button.id = 'about';
-  button.textContent = 'About';
+  button.textContent = '?';
+  button.className = 'about-button';
+  button.title = 'About Duckbench';
+  button.setAttribute('aria-label', 'About Duckbench');
   button.setAttribute('aria-haspopup', 'dialog');
-  document.querySelector('.layout-actions').append(button);
+  document.querySelector('.shell-brand').append(button);
 
   const dialog = document.createElement('dialog');
   dialog.id = 'about-dialog';

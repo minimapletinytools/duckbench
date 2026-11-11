@@ -28,11 +28,11 @@ try {
  console.log('STEP download',download.suggestedFilename());
  // A rebuild preserves the existing model and uses compact toolbar progress.
  const firstCanvas=await page.locator('.cad-instance').getAttribute('id');
- await page.getByRole('tab',{name:'Code',exact:true}).click();
+ await page.locator('#tab-source').click();
  await page.locator('#editor .view-lines').click();
  await page.keyboard.press('Meta+End');
  await page.keyboard.insertText('\nimport time\ntime.sleep(2)\n');
- await page.getByRole('tab',{name:'3D Preview',exact:true}).click();
+ await page.locator('#tab-preview').click();
  await page.locator('#refresh-preview').click();
  await page.locator('#preview-progress').waitFor({state:'visible'});
  assert.equal(await page.locator('#preview-loading').isVisible(),false);
@@ -69,16 +69,16 @@ try {
  await page.getByRole('menuitem',{name:'Delete file…'}).click();
  await page.locator('#confirm-delete').click();
  await page.getByRole('treeitem',{name:/model.py/}).waitFor({state:'detached'});
- assert.equal(await page.locator('#filename').textContent(),'plate.py');
+ assert.equal(await page.locator('#filename').textContent(),'duck.py');
  console.log('Deletion cancellation, imported dependency removal, and active-file fallback passed');
- await page.getByRole('tab',{name:'Code',exact:true}).click();
+ await page.locator('#tab-source').click();
  await page.locator('#editor .view-lines').click();
  await page.keyboard.press('Meta+a');
  await page.keyboard.insertText('result = 42');
  await page.locator('#run').click();
  await page.locator('#error-banner').waitFor({state:'visible'});
  console.log('Invalid result correctly rejected');
- await page.getByRole('tab',{name:'Code',exact:true}).click();
+ await page.locator('#tab-source').click();
  await page.locator('#editor .view-lines').click();
  await page.keyboard.press('Meta+a');
  await page.keyboard.insertText('while True: pass');

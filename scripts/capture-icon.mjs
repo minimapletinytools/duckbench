@@ -9,9 +9,9 @@ import path from 'node:path';
 const root=path.resolve(import.meta.dirname,'..');
 const output=path.join(root,'public/icons');
 await fs.mkdir(output,{recursive:true});
-const code=await fs.readFile(path.join(root,'untitled.py'),'utf8');
+const code=await fs.readFile(path.join(root,'examples/duck.py'),'utf8');
 const response=JSON.parse(execFileSync('uv',['run','python','python/runner.py'],{
- cwd:root,input:JSON.stringify({id:1,method:'run',params:{code,filename:path.join(root,'untitled.py')}})+'\n',
+ cwd:root,input:JSON.stringify({id:1,method:'run',params:{code,filename:path.join(root,'examples/duck.py')}})+'\n',
  encoding:'utf8',maxBuffer:32*1024*1024,
 }));
 if(response.error)throw new Error(response.error);
