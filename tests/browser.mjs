@@ -1,4 +1,5 @@
 import { chromium } from 'playwright';
+import {waitForCache} from './cache-helpers.mjs';
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -11,6 +12,8 @@ await page.goto(process.env.TEST_URL||'http://127.0.0.1:5173');
 const monitor=setInterval(async()=>console.log('STATUS',await page.locator('#runtime-status').textContent(),(await page.locator('#logs').textContent()).slice(-600)),15000);
 try {
  await page.locator('input[webkitdirectory]').setInputFiles(path.resolve('tests/fixtures/project'));
+ await page.waitForFunction(()=>document.querySelector('#workspace-name').textContent==='project');
+ await waitForCache(page);await page.reload();
  await page.locator('summary').filter({hasText:'project'}).click();
  await page.getByRole('treeitem',{name:/model.py/}).click();
  await page.locator('#run').click();
@@ -69,7 +72,7 @@ try {
  await page.getByRole('menuitem',{name:'Delete file…'}).click();
  await page.locator('#confirm-delete').click();
  await page.getByRole('treeitem',{name:/model.py/}).waitFor({state:'detached'});
- assert.equal(await page.locator('#filename').textContent(),'duck.py');
+ assert.equal(await page.locator('#filename').textContent(),'untitled.py');
  console.log('Deletion cancellation, imported dependency removal, and active-file fallback passed');
  await page.locator('#tab-source').click();
  await page.locator('#editor .view-lines').click();

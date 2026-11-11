@@ -19,6 +19,7 @@
     "icons": "node scripts/capture-icon.mjs"
   },
   "dependencies": {
+    "fflate": "0.8.3",
     "monaco-editor": "^0.57.0",
     "three-cad-viewer": "5.1.3"
   },

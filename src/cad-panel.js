@@ -20,6 +20,7 @@ export function createCadPanel(container) {
   const observer=new ResizeObserver(schedule);observer.observe(container);
   return {
     layout:schedule,
+    clear(){viewer?.dispose();host?.remove();viewer=null;host=null;},
     render(scene){
       const nextHost=document.createElement('div');nextHost.className='cad-instance';nextHost.id=`cad-scene-${++sequence}`;
       nextHost.style.visibility='hidden';container.append(nextHost);
