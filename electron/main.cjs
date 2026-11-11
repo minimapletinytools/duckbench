@@ -57,6 +57,6 @@ ipcMain.handle('file:trash',async(_,filename)=>{
  openedFiles.delete(resolved);
  if(watchedFile===filename||watchedFile===resolved){watcher?.close();watcher=null;watchedFile=null;}
 });
-app.whenReady().then(()=>{win=new BrowserWindow({width:1450,height:920,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});win.webContents.setWindowOpenHandler(({url})=>{if(url.startsWith('https://'))shell.openExternal(url);return {action:'deny'};});win.webContents.on('will-navigate',event=>event.preventDefault());win.loadFile(path.join(root,'dist/index.html'));});
+app.whenReady().then(()=>{const icon=path.join(root,'dist/icons/duck-512.png');if(process.platform==='darwin')app.dock?.setIcon(icon);win=new BrowserWindow({icon,width:1450,height:920,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});win.webContents.setWindowOpenHandler(({url})=>{if(url.startsWith('https://'))shell.openExternal(url);return {action:'deny'};});win.webContents.on('will-navigate',event=>event.preventDefault());win.loadFile(path.join(root,'dist/index.html'));});
 app.on('window-all-closed',()=>app.quit());
 app.on('before-quit',()=>{watcher?.close();stop();});

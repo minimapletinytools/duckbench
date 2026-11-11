@@ -15,7 +15,8 @@
     "test:desktop": "node tests/desktop.mjs",
     "credits": "uv run python scripts/generate-credits.py",
     "prebuild": "npm run credits",
-    "predev": "npm run credits"
+    "predev": "npm run credits",
+    "icons": "node scripts/capture-icon.mjs"
   },
   "dependencies": {
     "monaco-editor": "^0.57.0",
@@ -44,7 +45,8 @@
     ],
     "mac": {
       "target": "dir",
-      "identity": null
+      "identity": null,
+      "icon": "public/icons/duck.icns"
     },
     "directories": {
       "output": "release/app"
@@ -55,7 +57,14 @@
         "to": "python"
       }
     ],
-    "productName": "Duckbench"
+    "productName": "Duckbench",
+    "icon": "public/icons/duck-512.png",
+    "win": {
+      "icon": "public/icons/duck.ico"
+    },
+    "linux": {
+      "icon": "public/icons/duck-512.png"
+    }
   },
   "description": "Standalone build123d desktop and browser workbench",
   "overrides": {

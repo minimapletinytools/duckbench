@@ -1,0 +1,15 @@
+{
+  "name": "Duckbench",
+  "short_name": "Duckbench",
+  "description": "A Python CAD workbench for desktop and browser.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#f5f5f2",
+  "icons": [
+    {"src": "icons/duck-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icons/duck-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"}
+  ]
+}
