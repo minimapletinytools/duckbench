@@ -1,6 +1,7 @@
 import bootstrapSource from '../public/ocp-bootstrap.py?raw';
 import runner from '../python/runner.py?raw';
 let ready;
+let importedFiles=new Set();
 const send = data=>self.postMessage(data);
 async function initialize() {
   send({status:'Loading Python…'});
@@ -20,15 +21,19 @@ await micropip.install('ocp-tessellate==3.6.3')
   py.globals.set('__name__','build1234_runner');
   py.runPython(runner);
   py.FS.mkdirTree('/project');
-  send({status:'Ready'});
+  send({ready:true});
   return py;
 }
 let queue=Promise.resolve();
 self.onmessage=({data})=>{queue=queue.then(async()=>{
   try {
-    const py=await (ready??=initialize());
+    const py=await (ready??=initialize().catch(error=>{ready=null;throw error;}));
     if(data.method==='run') {
+      send({status:'Building model…'});
       const relative=name=>name.replaceAll('\\','/').split('/').filter(part=>part && part!=='.' && part!=='..').join('/');
+      const nextFiles=new Set(Object.keys(data.params.files||{}).map(name=>'/project/'+relative(name)));
+      for(const filename of importedFiles)if(!nextFiles.has(filename)&&py.FS.analyzePath(filename).exists)py.FS.unlink(filename);
+      importedFiles=nextFiles;
       for(const [name,content] of Object.entries(data.params.files||{})) {
         const filename='/project/'+relative(name);
         py.FS.mkdirTree(filename.slice(0,filename.lastIndexOf('/')));
@@ -41,5 +46,5 @@ self.onmessage=({data})=>{queue=queue.then(async()=>{
     py.globals.set('_request_json',JSON.stringify(data));
     const result=JSON.parse(await py.runPythonAsync('json.dumps(dispatch(json.loads(_request_json)))'));
     send({id:data.id,result});
-  }catch(error){send({id:data.id,error:String(error.stack||error)});}
+  }catch(error){send({id:data.id,error:String(error.message||error)});}
 });};

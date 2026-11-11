@@ -5,6 +5,7 @@ const path=require('node:path');
 const root=path.resolve(__dirname,'..');
 let win,child,watcher,watchedFile,workspace,next=0,buffer='';
 const pending=new Map();
+const openedFiles=new Set();
 function stop(){const old=child;child=null;old?.kill('SIGKILL');for(const p of pending.values())p.reject(new Error('Python stopped. Run again to restart.'));pending.clear();buffer='';}
 function start(){
  if(child)return;
@@ -19,6 +20,7 @@ function start(){
  current.on('exit',()=>{if(child===current)stop();});
 }
 function watch(filename){
+ openedFiles.add(fs.realpathSync(filename));
  watcher?.close();watchedFile=filename;
  let timer;
  watcher=fs.watch(path.dirname(filename),(_,name)=>{if(name&&name.toString()!==path.basename(filename))return;clearTimeout(timer);timer=setTimeout(()=>{try{win.webContents.send('file:changed',{filename,code:fs.readFileSync(filename,'utf8')});}catch{}},200);});
@@ -45,6 +47,16 @@ ipcMain.handle('workspace:open',async()=>{
 });
 ipcMain.handle('workspace:list',(_,directory)=>entries(workspacePath(directory)));
 ipcMain.handle('workspace:read',(_,filename)=>{filename=workspacePath(filename);const code=fs.readFileSync(filename,'utf8');watch(filename);return {filename,code};});
+ipcMain.handle('file:trash',async(_,filename)=>{
+ if(typeof filename!=='string'||!path.isAbsolute(filename))throw new Error('Select an existing file first.');
+ // Only regular files explicitly opened by the user or inside the selected workspace.
+ if(!fs.lstatSync(filename).isFile())throw new Error('Only regular files can be moved to Trash.');
+ const resolved=fs.realpathSync(filename);
+ if(!openedFiles.has(resolved))workspacePath(filename);
+ await shell.trashItem(resolved);
+ openedFiles.delete(resolved);
+ if(watchedFile===filename||watchedFile===resolved){watcher?.close();watcher=null;watchedFile=null;}
+});
 app.whenReady().then(()=>{win=new BrowserWindow({width:1450,height:920,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});win.webContents.setWindowOpenHandler(({url})=>{if(url.startsWith('https://'))shell.openExternal(url);return {action:'deny'};});win.webContents.on('will-navigate',event=>event.preventDefault());win.loadFile(path.join(root,'dist/index.html'));});
 app.on('window-all-closed',()=>app.quit());
 app.on('before-quit',()=>{watcher?.close();stop();});

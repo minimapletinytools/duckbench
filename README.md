@@ -38,7 +38,7 @@ npm run dev
 1. **Shared execution contract — implemented.** `python/runner.py` executes source with `__name__ == '__main__'`, a meaningful filename, and fresh script globals. `result` must be a build123d Shape or completed BuildPart/BuildSketch/BuildLine. Use `Compound(children=[...])` for assemblies. Missing/invalid results produce explicit errors. Desktop sibling imports run relative to the selected file; previously loaded project modules are invalidated on rerun.
 2. **Geometry adapter — implemented.** `ocp-tessellate` supplies scene hierarchy, triangles, CAD edges, and face/edge metadata to `three-cad-viewer`. The runner retains the last successful CAD shape for STEP/STL export. Render failures and script errors preserve the last successful viewport. Cancellation destroys the runner and requires rebuilding before export.
 3. **Host transports — implemented.** Electron owns a persistent native Python subprocess, communicating via JSON lines. Python and native stdout are routed to the log separately from the protocol. The web host runs the same adapter in a Pyodide worker with OCP.wasm, using worker messages. Both can be terminated to cancel a stuck build.
-4. **Workbench — implemented.** Kigumi-style panel shell with a resizable left explorer, central Code / 3D Preview tabs, optional split view, and collapsible Output panel. Monaco provides Python syntax highlighting, editing, undo, and keyboard navigation. The right panel slot is reserved for a future agent; no agent UI is implemented. Also includes open/save, model tree, orbit/pan/zoom, viewer inspection controls, logs/errors, STEP/STL export, and keyboard shortcuts. Desktop watches the selected file for external edits, refreshing when there are no unsaved editor changes. Switching files retains their unsaved text in the current session. The preview fills the available center pane and resizes with the window and panel layout.
+4. **Workbench — implemented.** Kigumi-style panel shell with a resizable left explorer, central Code / 3D Preview tabs, optional split view, and collapsible Output panel. Monaco provides Python syntax highlighting, editing, undo, and keyboard navigation. The right panel slot is reserved for a future agent; no agent UI is implemented. Also includes open/save, model tree, orbit/pan/zoom, viewer inspection controls, logs/errors, STEP/STL export, and keyboard shortcuts. Desktop watches the selected file for external edits and updates the editor when there are no unsaved changes; the preview offers a refresh button instead of rebuilding automatically. Switching files retains their unsaved text in the current session. The preview fills the available center pane and resizes with the window and panel layout.
 5. **Validation and packaging — implemented for macOS arm64 and Chrome.** Native contract tests, actual browser execution/render/export/error/cancel checks, desktop render/export smoke, and production static build. See commands below.
 6. **Next increments.** Persistent browser project storage, dependency-file watching on desktop, exact kernel-backed measurement requests, font parity tests, explicit cross-runtime geometry parity tests, browser dependency lock/vendor cache, resource limits, multi-platform release CI and installers.
 
@@ -57,6 +57,7 @@ The architecture follows Kigumi's host/runner boundaries. The implementation is 
 npm test
 npm run build
 node tests/desktop.mjs
+node tests/file-actions-desktop.mjs
 # In another terminal: npm run preview
 TEST_URL=http://127.0.0.1:4173 npm run test:browser
 ```
@@ -67,7 +68,9 @@ The browser smoke uses installed Chrome through Playwright; set `TEST_BROWSER_CH
 
 `src/panels.js` owns registration, layout, active tabs and split mode. Panels register an element in `left`, `center`, `right`, or `bottom` and receive layout notifications; a right-side registration reveals the reserved slot. `src/editor.js` owns Monaco and its bundled worker. `src/cad-panel.js` owns the CAD viewer and measures its available area, subtracting the embedded toolbar and tree before sizing the canvas. `src/app.js` coordinates document state, explorer actions, execution and exports. Electron filesystem access is exposed through the narrow preload bridge.
 
-Use the titlebar controls to hide the explorer, show Output, or split Code and 3D Preview. Drag the explorer divider or Output divider to resize them. Ctrl/Cmd+Enter builds the model; Ctrl/Cmd+S saves the source.
+Use the titlebar controls to hide the explorer, show Output, or split Code and 3D Preview. Drag the explorer divider or Output divider to resize them. Ctrl/Cmd+Enter builds the model; Ctrl/Cmd+S saves the source. The first browser run shows setup progress and explains the initial package downloads. Later builds show compact progress in the preview toolbar, preserving the previous model. **Refresh preview** appears when the active source or imported project differs from the last successful build, including edits made during a build.
+
+Right-click a file in Explorer (or press Shift+F10) and choose **Delete file…**. A confirmation explains the action: desktop files move to Trash, while browser files are removed from the imported workspace without changing the originals on disk. Unsaved edits to the deleted file are discarded; deleting the last open file leaves a blank editor. Deleted browser dependencies are removed from the Python runtime on the next build.
 
 ## License and credits
 

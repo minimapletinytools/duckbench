@@ -4,6 +4,8 @@ import {PanelShell} from './panels.js';
 import {createEditor} from './editor.js';
 import {createCadPanel} from './cad-panel.js';
 import {createRuntime} from './runtime.js';
+import {createViewerFeedback} from './viewer-feedback.js';
+import {createFileActions} from './file-actions.js';
 
 const EXAMPLE=`from build123d import *
 
@@ -34,33 +36,51 @@ const folderInput=document.createElement('input');folderInput.type='file';folder
 let filename='plate.py',initial=EXAMPLE;
 try{filename=localStorage.getItem('build1234.filename')||filename;initial=localStorage.getItem('build1234.code')??initial;}catch{}
 let changing=false,runtime,busy=false,exporting=false,canExport=false,hasModel=false,generation=0,builtFilename=filename;
+let builtSnapshot=null,projectRevision=0,buildNeedsSetup=false,progressMessage='Building model…',deleting=false;
 let workspace=null,browserFiles={},treeEntries=[];
+let expandedFolders=new Set();
 const documents=new Map([[filename,{code:initial,saved:initial}]]);
 const editor=createEditor($('editor'),{value:initial,onChange:()=>{if(changing)return;const doc=documents.get(filename);doc.code=editor.getValue();sync();},onCursor:position=>{$('position').textContent=`Ln ${position.lineNumber}, Col ${position.column}`;}});
 editor.setFilename(filename);
 const cad=createCadPanel($('cad-view'));
+const feedback=createViewerFeedback(preview,run);
+const fileActions=createFileActions({isDiskFile:path=>!!window.desktop&&/^(\/|[A-Za-z]:[\\/])/.test(path),removeFile,onError:error});
 shell.onLayout(()=>{editor.layout();cad.layout();});
+function projectFiles(){
+ const files={...browserFiles};
+ for(const [path,doc] of documents)if(Object.hasOwn(files,path))files[path]=doc.code;
+ return files;
+}
+function snapshot(){return JSON.stringify([filename,editor.getValue(),projectRevision,window.desktop?null:projectFiles()]);}
+function updatePreview(){feedback.update({busy,hasModel,needsSetup:buildNeedsSetup,stale:!canExport||snapshot()!==builtSnapshot,disabled:!runtime||exporting||deleting,message:progressMessage});}
 function dirty(){const doc=documents.get(filename);return doc.code!==doc.saved;}
 function sync(){
  $('filename').textContent=filename.split(/[\\/]/).pop();$('dirty').hidden=!dirty();
  for(const row of explorer.querySelectorAll('.file-row')){row.classList.toggle('selected',row.dataset.path===filename);row.setAttribute('aria-selected',String(row.dataset.path===filename));}
  try{localStorage.setItem('build1234.filename',filename);localStorage.setItem('build1234.code',editor.getValue());}catch{}
+ updatePreview();
 }
 function log(text){$('logs').textContent+=String(text)+'\n';$('logs').scrollTop=$('logs').scrollHeight;}
-function status(text){$('runtime-status').textContent=text;}
+function status(text){$('runtime-status').textContent=text;if(busy){progressMessage=text;updatePreview();}}
 function buttons(){
- $('run').disabled=!runtime||busy||exporting;$('empty-run').disabled=$('run').disabled;$('cancel').disabled=!busy;
- $('step').disabled=$('stl').disabled=!canExport||busy||exporting;
+ $('run').disabled=!runtime||busy||exporting||deleting;$('empty-run').disabled=$('run').disabled;$('cancel').disabled=!busy;
+ $('step').disabled=$('stl').disabled=!canExport||busy||exporting||deleting;
+ updatePreview();
 }
 function error(error){const message=error.message||String(error);$('error-message').textContent=message.split('\n').filter(Boolean).at(-1);$('error-banner').hidden=false;log(message);}
 async function run(){
- if(!runtime||busy||exporting)return;
- const token=++generation;const runningFile=filename;const code=editor.getValue();busy=true;buttons();$('error-banner').hidden=true;status('Building…');log(`› ${runningFile}`);
+ if(!runtime||busy||exporting||deleting)return;
+ const token=++generation;const runningFile=filename;const code=editor.getValue();const runningSnapshot=snapshot();const files=projectFiles();
+ buildNeedsSetup=runtime.needsSetup;busy=true;status(buildNeedsSetup?'Preparing Python and CAD…':'Building model…');buttons();$('error-banner').hidden=true;log(`› ${runningFile}`);
  shell.activate('preview');
  try{
-   const result=await runtime.run({code,filename:runningFile,files:browserFiles});
+   const result=await runtime.run({code,filename:runningFile,files});
+   if(token!==generation)return;
+   status('Preparing 3D preview…');
+   await new Promise(requestAnimationFrame);
    if(token!==generation)return;
    cad.render(result.scene);$('empty-state').hidden=true;hasModel=true;canExport=true;builtFilename=runningFile;
+   builtSnapshot=runningSnapshot;
    $('model-state').textContent='result';$('model-state').title=runningFile;$('elapsed').textContent=result.elapsed.toFixed(2)+'s';status('Ready');log(`Built in ${result.elapsed.toFixed(2)}s`);
  }catch(e){if(token!==generation)return;error(e);status('Build failed');$('model-state').textContent=hasModel?'Last successful model':'No model yet';}
  finally{if(token===generation){busy=false;buttons();}}
@@ -77,21 +97,41 @@ function load(data,{activate=true}={}){
 function fileRow(entry,depth){
  const row=document.createElement('button');row.className='file-row';row.dataset.path=entry.path;row.setAttribute('role','treeitem');row.style.paddingLeft=`${12+depth*14}px`;row.textContent=(entry.name.endsWith('.py')?'◇  ':'·  ')+entry.name;
  row.onclick=async()=>{try{const existing=documents.get(entry.path);if(window.desktop&&workspace)load(await window.desktop.readFile(entry.path));else if(existing)load({filename:entry.path,code:existing.code});else load({filename:entry.path,code:browserFiles[entry.path]??''});}catch(e){error(e);}};
+ fileActions.bind(row,entry);
  return row;
 }
 function appendEntries(parent,entries,depth=0){
  for(const entry of entries){
   if(entry.directory){
-   const details=document.createElement('details');const summary=document.createElement('summary');summary.className='folder-row';summary.style.paddingLeft=`${12+depth*14}px`;summary.textContent=entry.name;details.append(summary);
+   const details=document.createElement('details');details.dataset.path=entry.path;const summary=document.createElement('summary');summary.className='folder-row';summary.style.paddingLeft=`${12+depth*14}px`;summary.textContent=entry.name;details.append(summary);
    const children=document.createElement('div');children.setAttribute('role','group');details.append(children);let loaded=false;
-   details.addEventListener('toggle',async()=>{if(!details.open||loaded)return;loaded=true;try{appendEntries(children,entry.children||await window.desktop.listFiles(entry.path),depth+1);sync();}catch(e){loaded=false;error(e);}});parent.append(details);
+   details.addEventListener('toggle',async()=>{if(!details.open||loaded)return;loaded=true;try{appendEntries(children,entry.children||await window.desktop.listFiles(entry.path),depth+1);sync();}catch(e){loaded=false;error(e);}});parent.append(details);details.open=expandedFolders.has(entry.path);
   }else parent.append(fileRow(entry,depth));
  }
 }
 function renderTree(){
+ expandedFolders=new Set([...$('file-tree').querySelectorAll('details[open]')].map(node=>node.dataset.path));
  $('file-tree').replaceChildren();
  appendEntries($('file-tree'),workspace?treeEntries:[...documents.keys()].map(path=>({name:path.split(/[\\/]/).pop(),path})));
  $('workspace-name').textContent=workspace?.name||'OPEN FILES';explorer.querySelector('.explorer-hint').hidden=!!workspace;sync();
+}
+async function removeFile(path){
+ if(deleting)return;
+ deleting=true;buttons();
+ try{
+  if(busy)cancel();
+  if(window.desktop&&/^(\/|[A-Za-z]:[\\/])/.test(path))await window.desktop.trashFile(path);
+  documents.delete(path);delete browserFiles[path];projectRevision++;
+  if(workspace){
+   if(window.desktop){const prune=entries=>entries.filter(entry=>entry.path!==path).map(entry=>({...entry,...(entry.children?{children:prune(entry.children)}:{})}));treeEntries=prune(treeEntries);}
+   else treeEntries=browserTree(browserFiles);
+  }
+  if(filename===path){
+   const next=[...documents.keys()].find(name=>name.endsWith('.py'))||Object.keys(browserFiles).find(name=>name.endsWith('.py'));
+   load(next?{filename:next,code:documents.get(next)?.code??browserFiles[next]}:{filename:path==='untitled.py'?'new-file.py':'untitled.py',code:''});
+  }
+  renderTree();status('File removed');
+ }finally{deleting=false;buttons();}
 }
 function browserTree(files){
  const root=[];
@@ -118,12 +158,14 @@ $('save').onclick=save;$('run').onclick=run;$('empty-run').onclick=run;$('cancel
 $('example').onclick=()=>load({filename:'example.py',code:EXAMPLE});
 $('dismiss-error').onclick=()=>{$('error-banner').hidden=true;};$('clear-log').onclick=()=>{$('logs').textContent='';};
 for(const format of ['step','stl'])$(format).onclick=async()=>{if(!canExport||busy||exporting)return;exporting=true;buttons();try{download(await runtime.exportModel(format),builtFilename.split(/[\\/]/).pop().replace(/\.py$/i,'')+'.'+format,'application/octet-stream');}catch(e){error(e);}finally{exporting=false;buttons();}};
-document.addEventListener('keydown',event=>{if($('about-dialog').open)return;if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();run();}if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();save();}},true);
+document.addEventListener('keydown',event=>{if(document.querySelector('dialog[open]'))return;if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();run();}if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();save();}},true);
 window.desktop?.onFileChanged(data=>{
  const doc=documents.get(data.filename);if(!doc)return;
- if(doc.code!==doc.saved){log('File changed on disk; keeping your unsaved edits.');return;}
- doc.code=doc.saved=data.code;if(data.filename===filename){load(data,{activate:false});if(!busy&&!exporting)run();}
+ if(doc.saved===data.code)return;
+ projectRevision++;
+ if(doc.code!==doc.saved){log('File changed on disk; keeping your unsaved edits.');updatePreview();return;}
+ doc.code=doc.saved=data.code;if(data.filename===filename)load(data,{activate:false});else updatePreview();
 });
-window.addEventListener('beforeunload',()=>{disposeAbout();shell.dispose();editor.dispose();cad.dispose();runtime?.dispose();});
+window.addEventListener('beforeunload',()=>{disposeAbout();fileActions.dispose();shell.dispose();editor.dispose();cad.dispose();runtime?.dispose();});
 renderTree();
 try{runtime=await createRuntime({onLog:log,onStatus:status});buttons();log(window.desktop?'Native Python ready to run.':'Browser Python loads on first run.');}catch(e){error(e);}
