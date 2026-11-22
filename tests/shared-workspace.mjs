@@ -72,6 +72,6 @@ try{
   await screen.waitForFunction(()=>document.querySelector('#tab-source')?.textContent==='helper.py');
   assert.equal(await screen.locator('#workspace-name').textContent(),'Gearbox');
   assert.ok(await screen.locator('.monaco-editor').isVisible());
-  await screen.locator('#toggle-agent').click();assert.ok(await screen.getByLabel('Message to agent').isVisible());
+  assert.ok(await screen.getByLabel('Message to agent').isVisible());
   console.log('Former viewer URL, concurrent cache migration, legacy ZIP recovery, Monaco and workspace restart passed.');
 }finally{await app?.close();await browser.close();await rm(folder,{recursive:true,force:true});}

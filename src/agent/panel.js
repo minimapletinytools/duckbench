@@ -5,25 +5,49 @@ import {chat} from './chat.js';
 import './panel.css';
 import {conversations} from './conversations.js';
 
-export function createAgentPanel(project, {apply, run, runLabel, show}) {
+export function createAgentPanel(project, {apply, run, runLabel, show, close}) {
   const element = document.createElement('section');
   element.className = 'agent-panel';
-  element.innerHTML = `<div class="panel-toolbar"><strong>AGENT</strong><span class="panel-spacer"></span><select data-id="model" aria-label="Agent model" hidden></select><button data-id="past">History</button><button data-id="clear">New chat</button></div>
+  element.innerHTML = `<div class="panel-toolbar"><strong>AGENT</strong><span class="panel-spacer"></span><button data-id="past">History</button><button data-id="clear">New chat</button><button data-id="close" type="button" class="agent-close" aria-label="Close agent panel" title="Close agent panel">×</button></div>
     <div data-id="threads" class="agent-history" hidden></div>
-    <details class="agent-settings"><summary>Account &amp; MCP <span data-id="indicator"></span></summary><div class="agent-account"><span data-id="identity">Signed out</span><div data-id="providers"><button data-provider="github">Sign in with GitHub</button><button data-provider="google" aria-label="Sign in with Google">Google</button></div><button data-id="logout" hidden>Sign out</button></div>
-    <details class="agent-mcp"><summary>MCP connection</summary><p data-id="scope"></p>
-    <div><button data-id="connect">Connect MCP</button><button data-id="copy" hidden>Copy client setup</button></div><output data-id="connection">Disconnected</output></details></details>
-    <div class="agent-thread" role="log" aria-label="Conversation"></div>
+    <details class="agent-mcp"><summary>MCP connection<span data-id="indicator"></span></summary>
+      <p data-id="scope"></p><p data-id="mcpLogin" hidden>Sign in below to connect MCP in the browser.</p><div><button data-id="connect">Connect MCP</button><button data-id="copy" hidden>Copy client setup</button></div><output data-id="connection">Disconnected</output></details>
+    <div class="agent-thread">
+      <div data-id="welcome" class="agent-welcome">
+        <p><span aria-hidden="true">↑</span> Enable MCP above to connect your own agent.</p>
+        <p>For the best experience, use your own agent. Duckbench also includes a built-in agent with limited tokens.</p>
+        <p data-id="loginHint"><span aria-hidden="true">↓</span> Sign in below to use the built-in agent.</p>
+      </div>
+      <div role="log" aria-label="Conversation"></div>
+    </div>
     <section class="agent-proposal" aria-label="Proposed edit" hidden><strong data-id="target"></strong><details open><summary>Review edit</summary><pre class="removed" data-id="original"></pre><pre class="added" data-id="replacement"></pre></details><div><button data-id="apply">Apply edit</button> <button data-id="applyRun">Apply &amp; Run</button> <button data-id="discard">Discard</button></div></section>
     <form class="agent-compose"><textarea aria-label="Message to agent" rows="3" placeholder="Ask about this project…"></textarea>
-    <div data-id="mentions" class="agent-mentions" hidden></div><small data-id="billing" hidden>Chat uses your Kigumi credits.</small><div><output data-id="status" role="status"></output><button data-id="send" class="primary" disabled>Send</button><button type="button" data-id="cancel" hidden>Stop</button></div></form>`;
+    <div data-id="mentions" class="agent-mentions" hidden></div><div><output data-id="status" role="status"></output><button data-id="send" class="primary" disabled>Send</button><button type="button" data-id="cancel" hidden>Stop</button></div></form>
+    <footer class="agent-account">
+      <span data-id="identity">Sign in with</span><div data-id="providers"><button data-provider="github" aria-label="Sign in with GitHub">GitHub</button><button data-provider="google" aria-label="Sign in with Google">Google</button></div><button data-id="logout" hidden>Sign out</button>
+      <div data-id="billing" class="agent-billing" hidden><span data-id="usage"></span><select data-id="model" aria-label="Agent model" hidden></select></div>
+    </footer>`;
   const ui = Object.fromEntries([...element.querySelectorAll('[data-id]')].map(node => [node.dataset.id, node]));
-  const thread = element.querySelector('.agent-thread');
+  ui.close.onclick = close;
+  const thread = element.querySelector('[role="log"]');
   const input = element.querySelector('textarea');
   const desktop = window.desktop;
   let account, relay, user, turn, session, connection, context, signingIn = false;
   let storage=null,record=null,mentionId=0;
   const history=[];
+  let usageRequest=0;
+  const money=new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:4});
+  async function refreshUsage(){
+    const id=++usageRequest;
+    if(!user || !account)return;
+    try{
+      const {balanceUsd,usage}=await account.request('/account');
+      if(id!==usageRequest || !user)return;
+      const lastCharge=usage?.[0]?.charged_micro_usd;
+      ui.usage.textContent='Kigumi credit '+money.format(balanceUsd)
+        +(Number.isFinite(lastCharge)?' · Last request '+money.format(lastCharge/1_000_000):'');
+    }catch{if(id===usageRequest)ui.usage.textContent='Credit balance unavailable';}
+  }
   function persist(){
     if(!storage||!record)return;
     record.history=history.slice();record.draft=input.value;
@@ -39,6 +63,15 @@ export function createAgentPanel(project, {apply, run, runLabel, show}) {
   function loadContext(){
     storage=user&&context?conversations(user.id,context):null;
     restore(storage?.load());
+    if(!storage)return;
+    // Carry a signed-out prompt through the provider redirect in this tab only.
+    const key='duckbench.signInDraft.'+context;
+    let draft;
+    try{draft=sessionStorage.getItem(key);sessionStorage.removeItem(key);}catch{}
+    if(draft){
+      if(record.draft || record.transcript.length)restore(storage.fresh());
+      input.value=draft;controls();persist();
+    }
   }
   async function loadModels(){
     const owner=user?.id;
@@ -104,15 +137,19 @@ export function createAgentPanel(project, {apply, run, runLabel, show}) {
   ui.apply.onclick=()=>accept(false);ui.applyRun.onclick=()=>accept(true);
 
   function controls() {
-    ui.identity.textContent = user ? user.email || 'Signed in' : 'Signed out';
+    ui.identity.textContent = user ? user.email || 'Signed in' : 'Sign in with';
     ui.providers.hidden = !!user;
+    ui.loginHint.hidden = !!user;
+    ui.past.disabled = !user;
+    ui.welcome.hidden = thread.childElementCount > 0;
     for (const button of ui.providers.children) button.disabled = !account || signingIn;
     ui.logout.hidden = ui.billing.hidden = !user;
     ui.connect.disabled = !desktop && (!user || !relay);
+    ui.mcpLogin.hidden = !!desktop || !!user;
     ui.connect.textContent = connection ? 'Disconnect MCP' : 'Connect MCP';
     ui.indicator.textContent=session?' · Connected':'';
     ui.copy.hidden = !session;
-    ui.send.disabled = !user || !input.value.trim() || !!turn;
+    ui.send.disabled = !input.value.trim() || !!turn;
     ui.send.hidden = !!turn;
     ui.cancel.hidden = !turn;
   }
@@ -149,6 +186,7 @@ export function createAgentPanel(project, {apply, run, runLabel, show}) {
     const body = document.createElement('p');
     body.textContent = text;
     item.append(from, body);
+    ui.welcome.hidden=true;
     thread.append(item);
     item.scrollIntoView({block: 'nearest'});
   }
@@ -180,6 +218,13 @@ export function createAgentPanel(project, {apply, run, runLabel, show}) {
   ui.providers.onclick = async event => {
     const provider = event.target.dataset.provider;
     if (!provider || !account || signingIn) return;
+    if(context){
+      try{
+        const key='duckbench.signInDraft.'+context;
+        if(input.value.trim())sessionStorage.setItem(key,input.value);
+        else sessionStorage.removeItem(key);
+      }catch{}
+    }
     signingIn = true; controls();
     ui.status.textContent = 'Opening sign-in…';
     try { await account.signIn(provider); }
@@ -213,7 +258,11 @@ export function createAgentPanel(project, {apply, run, runLabel, show}) {
   element.querySelector('form').onsubmit = async event => {
     event.preventDefault();
     const prompt = input.value.trim();
-    if (!prompt || !user || turn) return;
+    if (!prompt || turn) return;
+    if (!user) {
+      ui.status.textContent='Sign in below to use the built-in agent.';
+      return;
+    }
     const active = turn = new AbortController();
     input.value = '';ui.mentions.hidden=true;
     controls();
@@ -229,7 +278,7 @@ export function createAgentPanel(project, {apply, run, runLabel, show}) {
     } catch (error) {
       if (turn === active) ui.status.textContent = active.signal.aborted ? 'Stopped' : error.message;
     } finally {
-      if (turn === active) { turn = null; controls(); }
+      if (turn === active) { turn = null; controls(); void refreshUsage(); }
     }
   };
   input.onkeydown = event => {
@@ -238,16 +287,19 @@ export function createAgentPanel(project, {apply, run, runLabel, show}) {
       element.querySelector('form').requestSubmit();
     }
   };
-  if(/[?&](code|error)=/.test(location.search))element.querySelector('.agent-settings').open=true;
   controls();
   void (async () => {
     account = await createAccount(next => {
-      if (user?.id !== next?.id){persist();reset();user=next;loadContext();void loadModels();}else user=next;
+      if (user?.id !== next?.id){
+        persist();reset();user=next;loadContext();void loadModels();
+        ui.usage.textContent=user?'Loading credit balance…':'';
+        void refreshUsage();
+      }else user=next;
       controls();
     });
     if (!desktop) relay = createRelay(account, project, report);
     controls();
-    await account.finishRedirect();void loadModels();
+    await account.finishRedirect();void loadModels();void refreshUsage();
   })().catch(error => { ui.status.textContent = error.message; });
   window.addEventListener('pagehide', () => { turn?.abort(); stop(); });
   return {element,attach,contextKey:()=>context,setContext(key) {

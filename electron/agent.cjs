@@ -20,7 +20,7 @@ function installAgent({win, ipcMain, shell}) {
   const requests = new Map();
   handle('agent:abort', id => requests.get(id)?.abort());
   handle('agent:request', async (id, path, init) => {
-    if (!(path === '/models' && init.method === 'GET' || path === '/v1/chat/completions' && init.method === 'POST')) {
+    if (!(['/models','/account'].includes(path) && init.method === 'GET' || path === '/v1/chat/completions' && init.method === 'POST')) {
       throw new Error('Unknown backend request.');
     }
     const controller = new AbortController();

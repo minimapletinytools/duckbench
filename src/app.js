@@ -174,9 +174,12 @@ const project=agentProject({
  workspace:()=>workspace, documents, filename:()=>filename, desktop:window.desktop,
  preview:()=>({status:$('runtime-status').textContent,runTarget:project.relative(runPath()),lastAttempt:lastAttempt?.target?lastAttempt:null,lastSuccessful:hasModel?project.relative(builtFilename):null,lastSuccessfulId:hasModel&&project.relative(builtFilename)?lastScene.build:null,stale:hasModel&&snapshot()!==builtSnapshot}),
 });
-const agent=createAgentPanel(project,{editor,apply:applyProjectEdit,run,runLabel,show:()=>{if($('right-slot').hidden)shell.toggle('right');}});
+const agent=createAgentPanel(project,{
+ apply:applyProjectEdit,run,runLabel,
+ show:()=>{if($('right-slot').hidden)shell.toggle('right');},
+ close:()=>{shell.toggle('right');$('toggle-agent').focus();},
+});
 shell.register({id:'agent',title:'Agent',slot:'right',element:agent.element});
-if(!window.desktop && /[?&](code|error)=/.test(location.search))shell.toggle('right');
 const refreshSearch=installExplorerSearch({
  input:$('find-file'),tree:$('file-tree'),fileRow,sync,
  entries:()=>[...[...documents.keys()].filter(path=>!inWorkspace(path)).map(path=>({name:path.split(/[\\/]/).pop(),path})),...treeEntries],

@@ -21,9 +21,24 @@ async function setupFromPanel(page) {
   return page.evaluate(() => JSON.parse(window.copied).mcpServers.duckbench);
 }
 
-async function exercise(page, isDesktop) {
+async function signedOutPrompt(page) {
+  const input=page.getByLabel('Message to agent');
+  await input.waitFor();
+  assert.ok(await page.getByText('Enable MCP above', {exact:false}).isVisible());
+  await page.getByRole('button',{name:'Close agent panel'}).click();
+  assert.equal(await page.locator('#toggle-agent').getAttribute('aria-pressed'),'false');
   await page.locator('#toggle-agent').click();
-  if (!await page.locator('.agent-settings').evaluate(node=>node.open)) await page.locator('.agent-settings > summary').click();
+  const provider=page.getByRole('button',{name:'Sign in with GitHub'});
+  assert.ok((await provider.boundingBox()).y > (await input.boundingBox()).y);
+  await input.fill('Help me change the bill');
+  await input.press('Enter');
+  await page.locator('[data-id="status"]').getByText('Sign in below to use the built-in agent.').waitFor();
+  assert.equal(await input.inputValue(),'Help me change the bill');
+  assert.equal(await page.getByRole('log',{name:'Conversation'}).locator('article').count(),0);
+}
+
+async function exercise(page, isDesktop) {
+  assert.equal(await page.locator('#toggle-agent').getAttribute('aria-pressed'),'true');
   await page.getByText('MCP connection', {exact: true}).click();
   await page.getByRole('button', {name: 'Connect MCP', exact: true}).click();
   const {url, headers} = await setupFromPanel(page);
@@ -68,6 +83,7 @@ async function exercise(page, isDesktop) {
       await page.getByRole('button', {name:'Send', exact:true}).click();
       await page.getByText('The file contains a comment.', {exact:true}).waitFor();
       assert.equal(requests, 2);
+      assert.ok(await page.locator('[data-id=welcome]').isHidden());
       await page.getByRole('button',{name:'Disconnect MCP'}).click();
       await page.getByText('Disconnected',{exact:true}).waitFor();
       let status;
@@ -80,6 +96,8 @@ async function exercise(page, isDesktop) {
       await page.getByText('The file contains a comment.', {exact:true}).waitFor();
       await page.getByLabel('Message to agent').fill('Continue checking the model');
       await page.getByRole('button',{name:'New chat',exact:true}).click();
+      assert.ok(await page.locator('[data-id=welcome]').isVisible());
+      assert.ok(await page.locator('[data-id=loginHint]').isHidden());
       await page.getByRole('button',{name:'History',exact:true}).click();
       await page.getByRole('button',{name:'What is in duck.py?'}).click();
       assert.equal(await page.getByLabel('Message to agent').inputValue(),'Continue checking the model');
@@ -94,6 +112,7 @@ try {
   if (mode !== 'web') {
     desktop = await electron.launch({args:['.', '--user-data-dir=' + folder], env:{...process.env, ELECTRON_RUN_AS_NODE:'', VITE_KIGUMI_SUPABASE_URL:'https://supabase.test'}});
     const page = await desktop.firstWindow();
+    await signedOutPrompt(page);
     await exercise(page, true);
     const projectPath = path.join(folder, 'project');
     await mkdir(path.join(projectPath, 'parts'), {recursive:true});
@@ -156,8 +175,10 @@ try {
       return route.fulfill({json:{access_token:'fixture',refresh_token:'fixture',expires_in:3600,token_type:'bearer',
         user:{id:'desktop',email:'desktop@example.test',aud:'authenticated'}}});
     });
+    await page.getByLabel('Message to agent').fill('Which workspace is open?');
     await page.getByRole('button', {name:'Sign in with Google'}).click();
     await page.getByText('desktop@example.test').waitFor();
+    assert.equal(await page.getByLabel('Message to agent').inputValue(),'Which workspace is open?');
     await desktop.close(); desktop = null;
     console.log('Desktop MCP passed.');
   }
@@ -197,14 +218,18 @@ try {
         user:{id:'11111111-1111-4111-8111-111111111111',email:'fixture@example.test',aud:'authenticated'}}});
     });
     await page.goto('http://127.0.0.1:8127/');
-    await page.locator('#toggle-agent').click();
-    await page.locator('.agent-settings > summary').click();
+    await signedOutPrompt(page);
+    let balanceChecks=0;
+    await page.route(base+'/account',route=>{balanceChecks++;return route.fulfill({json:{balanceUsd:1.25,usage:[{charged_micro_usd:2500}]}});});
     await page.getByRole('button', {name:'Sign in with GitHub'}).click();
     await page.getByText('fixture@example.test').waitFor();
     assert.ok(exchanged);
     await page.waitForURL('http://127.0.0.1:8127/');
-    await page.locator('#toggle-agent').click();
+    assert.equal(await page.getByLabel('Message to agent').inputValue(),'Help me change the bill');
+    await page.getByText('Kigumi credit $1.25 · Last request $0.0025').waitFor();
+    const initialChecks=balanceChecks;
     await exercise(page, false);
+    assert.ok(balanceChecks>initialChecks);
     assert.deepEqual(errors, []);
     console.log('Browser MCP disconnect, chat history, tool calls and explorer search passed.');
   }

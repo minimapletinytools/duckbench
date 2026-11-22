@@ -1,6 +1,6 @@
 .agent-panel { background:var(--ka-bg); }
 .agent-account,.agent-mcp,.agent-compose { padding:10px 12px; border-bottom:1px solid var(--ka-border); }
-.agent-account { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; font-size:12px; }
+.agent-account { border-top:1px solid var(--ka-border);border-bottom:0;display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; font-size:12px; }
 .agent-account [data-id="identity"] { overflow-wrap:anywhere; }
 .agent-account [data-id="providers"] { display:flex; gap:5px; }
 .agent-mcp { font-size:12px; }
@@ -26,4 +26,23 @@
 .agent-proposal summary { font-size:12px; margin:6px 0; cursor:pointer; }
 .agent-proposal small { color:var(--ka-muted); }
 .agent-proposal pre { background:var(--ka-chrome-bg); padding:6px; margin:3px 0 8px; white-space:pre-wrap; overflow-wrap:anywhere; font:12px var(--ka-mono); }
-.agent-settings>summary{cursor:pointer;font-size:12px;padding:8px 12px;border-bottom:1px solid var(--ka-border)}.agent-settings[open]{max-height:45%;overflow:auto}.agent-panel select{font:inherit;max-width:38%;min-width:0;color:inherit;background:var(--ka-bg);border:1px solid var(--ka-border)}.agent-history,.agent-mentions{max-height:150px;overflow:auto;padding:5px}.agent-history button,.agent-mentions button{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis}.agent-proposal .added{background:#e3f2e8;color:#174529}.agent-proposal .removed{background:#f7e9e8;color:#742f2b}.agent-proposal>div{display:flex;gap:4px;flex-wrap:wrap}
+.agent-panel select{font:inherit;max-width:38%;min-width:0;color:inherit;background:var(--ka-bg);border:1px solid var(--ka-border)}.agent-history,.agent-mentions{max-height:150px;overflow:auto;padding:5px}.agent-history button,.agent-mentions button{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis}.agent-proposal .added{background:#e3f2e8;color:#174529}.agent-proposal .removed{background:#f7e9e8;color:#742f2b}.agent-proposal>div{display:flex;gap:4px;flex-wrap:wrap}
+
+.agent-panel>.panel-toolbar { flex-shrink:0; }
+.agent-panel .agent-close { flex:none; width:26px; height:26px; padding:0; font-size:18px; }
+.agent-mcp { flex:none; max-height:32%; overflow:auto; }
+.agent-welcome { margin:auto 0; padding:18px 4px; font-size:13px; }
+.agent-welcome p { margin:0; }
+.agent-welcome p+p { margin-top:12px; }
+.agent-welcome p:first-child,.agent-welcome p:last-child { color:var(--ka-muted); }
+.agent-welcome span { color:var(--ka-accent); margin-right:3px; }
+.agent-thread { display:flex; flex-direction:column; }
+.agent-billing { display:flex; width:100%; flex-wrap:wrap; align-items:center; gap:5px 10px; color:var(--ka-muted); font-size:11px; }
+.agent-billing select { margin-left:auto; max-width:100%; }
+.agent-account { background:var(--ka-chrome-bg); }
+.agent-account [data-id="logout"] { margin-left:auto; }
+@media (max-height:520px) {
+  .agent-panel { overflow-y:auto; }
+  .agent-thread { min-height:7em; }
+  .agent-compose textarea { max-height:14vh; }
+}
