@@ -95,6 +95,11 @@ ipcMain.handle('workspace:restore',()=>{
  catch{return null;}
 });
 ipcMain.handle('workspace:list',(_,directory)=>entries(explorerPath(directory)));
+ipcMain.handle('workspace:download-bytes',(_,filename)=>fs.promises.readFile(explorerPath(filename)));
+ipcMain.handle('file:download-copy',async(_,name,bytes)=>{
+ const picked=await dialog.showSaveDialog(win,{title:'Download a copy',defaultPath:path.basename(name)});
+ if(picked.filePath)await fs.promises.writeFile(picked.filePath,bytes);
+});
 ipcMain.handle('workspace:read',(_,filename)=>readDocument(explorerPath(filename)));
 ipcMain.handle('workspace:agent-text', (_,filename) => {
  const target=explorerPath(filename);

@@ -18,7 +18,8 @@ export function createFileActions({isDiskFile, removeFile, actions = () => [], o
     menu.hidden = true;
     if (restore && sourceRow?.isConnected) sourceRow.focus();
   }
-  menu.querySelector('button').onclick = () => {
+  const deleteButton=menu.querySelector('button');
+  deleteButton.onclick = () => {
     closeMenu();
     const disk = isDiskFile(selected.path);
     dialog.querySelector('h2').textContent = `Delete “${selected.name}”?`;
@@ -48,7 +49,9 @@ export function createFileActions({isDiskFile, removeFile, actions = () => [], o
   return {
     bind(row, entry) {
       const open = event => {
-        event.preventDefault();
+        if(entry.root && event.target.closest('input,button,textarea,a,summary'))return;
+        event.preventDefault();event.stopPropagation();
+        deleteButton.hidden=!!(entry.directory||entry.root||entry.readOnly);
         selected = entry; sourceRow = row;
         for (const item of menu.querySelectorAll('[data-action]')) item.remove();
         for (const action of actions(entry)) {
@@ -63,7 +66,7 @@ export function createFileActions({isDiskFile, removeFile, actions = () => [], o
         const y = event.type === 'contextmenu' && event.clientY ? event.clientY : bounds.bottom;
         menu.style.left = `${Math.max(0, Math.min(x, innerWidth - menu.offsetWidth - 8))}px`;
         menu.style.top = `${Math.max(0, Math.min(y, innerHeight - menu.offsetHeight - 8))}px`;
-        menu.querySelector('button').focus();
+        menu.querySelector('button:not([hidden])')?.focus();
       };
       row.addEventListener('contextmenu', open);
       row.addEventListener('keydown', event => {

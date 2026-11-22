@@ -1,6 +1,8 @@
 const {contextBridge,ipcRenderer}=require('electron');
 const subscribe=(channel,callback)=>{const fn=(_,value)=>callback(value);ipcRenderer.on(channel,fn);return()=>ipcRenderer.removeListener(channel,fn);};
 contextBridge.exposeInMainWorld('desktop',{
+ readDownloadFile:path=>ipcRenderer.invoke('workspace:download-bytes',path),
+ downloadCopy:(name,bytes)=>ipcRenderer.invoke('file:download-copy',name,bytes),
  restoreWorkspace:()=>ipcRenderer.invoke('workspace:restore'),
  ready:()=>ipcRenderer.send('file:ready'),onLaunch:callback=>subscribe('file:launch',callback),
  viewerAssets:()=>ipcRenderer.invoke('viewer:assets'),

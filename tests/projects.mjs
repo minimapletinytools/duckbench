@@ -35,9 +35,20 @@ try{
  assert.ok(await page.locator('.monaco-editor').isVisible());
  assert.equal(await page.locator('#workspace-name').textContent(),'Default Project');
  const before=await readCache(page);assert.equal(before.projects.length,1);
- await page.getByRole('button',{name:'New folder…'}).click();
+ await page.locator('#workspace-name').click({button:'right'});
+ await page.getByRole('menuitem',{name:'New folder…'}).click();
  await page.getByLabel('New folder name').fill('parts/castings');await page.getByRole('button',{name:'Create',exact:true}).click();
- await page.locator('#file-tree summary').filter({hasText:'parts'}).waitFor();await waitForCache(page);await page.reload();await waitForCache(page);
+ const parts=page.locator('#file-tree summary').filter({hasText:'parts'});await parts.waitFor();
+ await parts.click({button:'right'});await page.getByRole('menuitem',{name:'New file…'}).click();
+ await page.getByLabel('New file name').fill('axle.py');await page.getByRole('button',{name:'Create',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelector('#filename').textContent==='axle.py');
+ await page.keyboard.insertText('# nested axle');await waitForCache(page);
+ await parts.click({button:'right'});const folderDownload=page.waitForEvent('download');
+ await page.getByRole('menuitem',{name:'Download folder (ZIP)'}).click();
+ const subset=unzipSync(await fs.readFile(await(await folderDownload).path()));
+ assert.deepEqual(Object.keys(subset).sort(),['parts/','parts/axle.py','parts/castings/']);
+ assert.equal(strFromU8(subset['parts/axle.py']),'# nested axle');
+ await waitForCache(page);await page.reload();await waitForCache(page);
  const zipPromise=page.waitForEvent('download');await page.locator('#export-zip').click();const zip=await zipPromise;
  const files=unzipSync(await fs.readFile(await zip.path()));
  assert.ok(files['Default_Project/parts/castings/']);
@@ -61,7 +72,7 @@ try{
  // A real failed write must retain edits and show a failure, not a Saved state.
  await page.evaluate(()=>{const put=IDBObjectStore.prototype.put;IDBObjectStore.prototype.put=function(...args){if(this.name==='projects')throw new DOMException('Test quota exceeded','QuotaExceededError');return put.apply(this,args);};});
  await edit(page,'# Keep me despite storage failure');await page.waitForFunction(()=>document.querySelector('#cache-status').textContent.includes('Not saved'));
- const filePromise=page.waitForEvent('download');await page.locator('#download-file').click();const file=await filePromise;assert.match(await fs.readFile(await file.path(),'utf8'),/Keep me despite storage failure/);
+ const filePromise=page.waitForEvent('download');await page.locator('.file-row.selected').first().click({button:'right'});await page.getByRole('menuitem',{name:'Download file'}).click();const file=await filePromise;assert.match(await fs.readFile(await file.path(),'utf8'),/Keep me despite storage failure/);
  // Modified legacy examples stay intact and get a separate duck starter.
  const preserved=await browser.newPage();await preserved.addInitScript(code=>{localStorage.setItem('build1234.filename','example.py');localStorage.setItem('build1234.code',code);},original+'# User edits\n');await preserved.goto(url);await waitForCache(preserved);assert.match(await cachedCode(preserved),/User edits/);assert.ok(await preserved.getByRole('treeitem',{name:/duck.py/}).isVisible());await preserved.close();
  console.log('Projects: legacy migration, autosave/reload, one Default Project, empty folders, ZIP export, deletion, cache failures, stale-tab protection, and draggable split passed.');

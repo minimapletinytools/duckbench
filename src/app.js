@@ -11,6 +11,7 @@ import {createEditor} from './editor.js';
 import {createCadPanel} from './cad-panel.js';
 import {createRuntime} from './runtime.js';
 import {createViewerFeedback} from './viewer-feedback.js';
+import {explorerDownload} from './explorer-download.js';
 import {createFileActions} from './file-actions.js';
 import {openProjectStore,migrateExample} from './project-store.js';
 import {exportProject,restoreArchive} from './project-archive.js';
@@ -81,57 +82,75 @@ const feedback=createViewerFeedback(preview,run);
 const exportsBar=document.createElement('div');exportsBar.className='geometry-exports';
 exportsBar.append($('step'),$('stl'),$('export-viewer'));preview.querySelector('.panel-toolbar').after(exportsBar);
 const fileActions=createFileActions({isDiskFile:path=>!!window.desktop&&/^(\/|[A-Za-z]:[\\/])/.test(path),removeFile,onError:error,actions:entry=>{
- const items=[];
- if(entry.path.endsWith('.py')&&(!window.desktop||!workspace||inWorkspace(entry.path)))items.push({label:entry.path===runTarget?'Unpin run target':'Set as run target',run:()=>setRunTarget(entry.path===runTarget?null:entry.path)});
- const relative=project.relative(entry.path);
- if(relative)items.push({label:'Ask agent about this file',run:()=>agent.attach(relative)});
+ const relative=entry.root?'':window.desktop?(inWorkspace(entry.path)?project.relative(entry.path):''):entry.path;
+ const parent=entry.directory?relative:(relative||'').split('/').slice(0,-1).join('/');
+ const items=[
+   {label:'New file…',run:()=>createEntry(parent,false)},
+   {label:'New folder…',run:()=>createEntry(parent,true)}
+ ];
+ if(entry.root)return items;
+ items.push({label:entry.directory?'Download folder (ZIP)':'Download file',run:()=>downloadEntry(entry)});
+ if(!entry.directory&&!entry.readOnly){
+   if(entry.path.endsWith('.py')&&(!window.desktop||!workspace||inWorkspace(entry.path)))items.push({label:entry.path===runTarget?'Unpin run target':'Set as run target',run:()=>setRunTarget(entry.path===runTarget?null:entry.path)});
+   const agentPath=project.relative(entry.path);
+   if(agentPath)items.push({label:'Ask agent about this file',run:()=>agent.attach(agentPath)});
+ }
  if(window.desktop&&inWorkspace(entry.path))items.push({label:'Reveal in file manager',run:()=>window.desktop.revealFile(entry.path)});
  return items;
 }});
 if(!window.desktop){
  $('open-folder').textContent='Import folder';$('open').textContent='Import file';
- const downloadButton=document.createElement('button');downloadButton.id='download-file';downloadButton.textContent='Download file';downloadButton.onclick=()=>download(editor.getValue(),filename.split('/').pop(),'text/x-python');explorer.append(downloadButton);
  const note=document.createElement('p');note.className='cache-notice';note.textContent='Saved in this browser, not to disk or the cloud. Use Export ZIP for a backup.';explorer.append(note);
 }
 $('storage-kind').textContent=window.desktop?'Files on disk':'Saved in this browser';
 $('open-folder').textContent=window.desktop?'Open workspace…':'Import folder';
 const fileCommands=document.createElement('div');
 fileCommands.className='explorer-commands';
-const named=document.createElement('button');named.textContent='New named file…';named.id='named-file';
-named.onclick=async()=>{
- try{
-  const name=await requestFilename('model.py');if(!name)return;
-  if(!validPath(name)||name.split('/').some(part=>['__proto__','constructor','prototype'].includes(part)))throw new Error('Enter a relative file name.');
-  let key=name;
-  if(window.desktop){
-    if(!workspace)throw new Error('Open a folder to create a named project file.');
-    key=await window.desktop.createProjectFile(name);treeEntries=await window.desktop.listFiles(workspace.root);
-  }else{
-    if([...browserFolders].some(dir=>dir===name||dir.startsWith(name+'/')))throw new Error('A folder already uses that name.');
-    const paths=[...documents.keys(),...Object.keys(projectRecord?.modelFiles||{})];
-    if(paths.some(p=>p===name||p.startsWith(name+'/')||name.startsWith(p+'/')))throw new Error('A file or folder already uses that name.');
-    browserFiles[name]='';treeEntries=browserTree(browserFiles);
-  }
-  load({filename:key,code:''});renderTree();editor.focus();
- }catch(reason){error(reason);}
-};
-const newFolder=document.createElement('button');newFolder.textContent='New folder…';
-newFolder.onclick=async()=>{try{
- const name=await requestFilename('parts','New folder name');if(!name)return;
- if(!validPath(name)||name.split('/').some(p=>p.startsWith('.')||['constructor','__proto__','prototype'].includes(p)))throw new Error('Enter a relative folder name.');
- if(window.desktop){
-   if(!workspace)throw new Error('Open a workspace first.');
-   await window.desktop.createFolder(name);treeEntries=await window.desktop.listFiles(workspace.root);
- }else{
-   const allFiles=[...documents.keys(),...Object.keys(projectRecord?.modelFiles||{})];
-   if(allFiles.some(path=>path===name||name.startsWith(path+'/')||path.startsWith(name+'/'))||browserFolders.has(name))throw new Error('A file or folder already uses that name.');
-   browserFolders.add(name);treeEntries=browserTree(browserFiles);
+fileCommands.append($('open-folder'),$('open'));
+explorer.tabIndex=0;
+fileActions.bind(explorer,{root:true});
+async function createEntry(parent,isFolder){
+ if(window.desktop&&!workspace){
+   if(!isFolder){$('new-file').click();return;}
+   if(!await pickWorkspace())return;
  }
- renderTree();
-}catch(reason){error(reason);}};
-fileCommands.append($('open-folder'),$('open'),named,newFolder);
+ const value=await requestFilename(isFolder?'parts':'model.py',isFolder?'New folder name':'New file name');
+ if(!value)return;
+ if(!validPath(value)||value.split('/').some(part=>part.startsWith('.')||['constructor','prototype','__proto__'].includes(part)))throw new Error('Enter a relative name.');
+ const name=parent?parent+'/'+value:value;
+ let key=name;
+ if(window.desktop){
+   if(isFolder)await window.desktop.createFolder(name);
+   else key=await window.desktop.createProjectFile(name);
+   treeEntries=await window.desktop.listFiles(workspace.root);
+ }else{
+   const existing=[...documents.keys(),...Object.keys(projectRecord?.modelFiles||{})];
+   if(existing.some(path=>path===name||path.startsWith(name+'/')||name.startsWith(path+'/'))||
+      [...browserFolders].some(path=>path===name||path.startsWith(name+'/')))throw new Error('A file or folder already uses that name.');
+   if(isFolder)browserFolders.add(name);else browserFiles[name]='';
+   treeEntries=browserTree(browserFiles);
+ }
+ const parts=name.split('/');
+ for(let i=1;i<parts.length;i++){
+   const dir=parts.slice(0,i).join('/');
+   expandedFolders.add(window.desktop?project.key(dir):dir);
+ }
+ if(!isFolder)load({filename:key,code:''});saveFolderPrefs();renderTree();if(!isFolder)editor.focus();
+}
+async function downloadEntry(entry){
+ const result=await explorerDownload(entry,{
+   list:path=>window.desktop.listFiles(path),
+   read:async path=>{
+     const doc=documents.get(path);
+     if(window.desktop&&(!doc||inWorkspace(path)&&doc.code===doc.saved))return window.desktop.readDownloadFile(path);
+     if(doc)return doc.code;
+     return projectRecord?.modelFiles?.[path]??browserFiles[path];
+   }
+ });
+ if(window.desktop)await window.desktop.downloadCopy(result.name,result.bytes);
+ else download(result.bytes,result.name,entry.directory?'application/zip':'application/octet-stream');
+}
 if(!window.desktop){
- fileCommands.append($('download-file'));
  const button=(title,action)=>{const b=document.createElement('button');b.textContent=title;b.onclick=action;fileCommands.append(b);return b;};
  button('Export ZIP',()=>exportProject({...projectRecord,name:'Default Project',...cachePayload()})).id='export-zip';
  const zip=document.createElement('input');zip.id='zip-input';zip.type='file';zip.accept='.zip';zip.hidden=true;fileCommands.append(zip);
@@ -357,14 +376,13 @@ function fileRow(entry,depth){
      if(scope===workspace)load({filename:entry.path,model});
    }else load({filename:entry.path,code:documents.get(entry.path)?.code??browserFiles[entry.path]??''});
  }catch(e){error(e);}};
- if(!window.desktop&&Object.hasOwn(projectRecord?.modelFiles||{},entry.path))return row;
- fileActions.bind(row,entry);
+ fileActions.bind(row,{...entry,readOnly:!window.desktop&&Object.hasOwn(projectRecord?.modelFiles||{},entry.path)});
  return row;
 }
 function appendEntries(parent,entries,depth=0){
  for(const entry of entries){
   if(entry.directory){
-   const details=document.createElement('details');details.dataset.path=entry.path;const summary=document.createElement('summary');summary.className='folder-row';summary.style.paddingLeft=`${12+depth*14}px`;summary.textContent=entry.name;details.append(summary);
+   const details=document.createElement('details');details.dataset.path=entry.path;const summary=document.createElement('summary');summary.className='folder-row';summary.style.paddingLeft=`${12+depth*14}px`;summary.textContent=entry.name;details.append(summary);fileActions.bind(summary,entry);
    const children=document.createElement('div');children.setAttribute('role','group');details.append(children);let loaded=false;
    details.addEventListener('toggle',async()=>{if(!details.isConnected)return;
     if(details.open)expandedFolders.add(entry.path);else expandedFolders.delete(entry.path);
@@ -425,11 +443,11 @@ async function enterFolder(folder,draft){
  $('model-state').textContent='No model yet';$('elapsed').textContent='';$('error-banner').hidden=true;
  load(data);renderTree();buttons();if(readError)error(readError);
 }
-$('open-folder').onclick=async()=>{try{
- if(!window.desktop){folderInput.click();return;}
+async function pickWorkspace(){
  if([...documents.values()].some(doc=>doc.code!==doc.saved)&&!confirm('Discard unsaved edits if you open another workspace?'))return;
- const folder=await window.desktop.openFolder();if(folder)await enterFolder(folder);
-}catch(e){error(e);}};
+ const folder=await window.desktop.openFolder();if(folder)await enterFolder(folder);return !!folder;
+}
+$('open-folder').onclick=async()=>{try{if(window.desktop)await pickWorkspace();else folderInput.click();}catch(e){error(e);}};
 folderInput.onchange=async()=>{try{
  const imported={},modelFiles={};
  for(const file of folderInput.files){

@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {chromium,_electron as electron} from 'playwright';
 import {waitForCache,readCache} from './cache-helpers.mjs';
+import {unzipSync,strFromU8} from 'fflate';
 import {restoreArchive} from '../src/project-archive.js';
 
 const base=new URL(process.env.TEST_URL||'http://localhost:4197/');
@@ -44,9 +45,23 @@ try{
   let screen=await launch();
   await app.evaluate(({dialog},dir)=>{dialog.showOpenDialog=async()=>({filePaths:[dir]});},workspace);
   await screen.getByRole('button',{name:'Open workspace…'}).click();await screen.getByRole('treeitem',{name:/helper.py/}).click();
-  await screen.getByRole('button',{name:'New folder…'}).click();await screen.getByLabel('New folder name').fill('parts');
+  await screen.locator('#workspace-name').click({button:'right'});await screen.getByRole('menuitem',{name:'New folder…'}).click();await screen.getByLabel('New folder name').fill('parts');
   await screen.getByRole('button',{name:'Create',exact:true}).click();
   await screen.locator('#file-tree summary').filter({hasText:'parts'}).waitFor();
+  const parts=screen.locator('#file-tree summary').filter({hasText:'parts'});
+  await parts.click({button:'right'});await screen.getByRole('menuitem',{name:'New file…'}).click();
+  await screen.getByLabel('New file name').fill('axle.py');await screen.getByRole('button',{name:'Create',exact:true}).click();
+  await screen.waitForFunction(()=>document.querySelector('#filename').textContent==='axle.py');
+  await screen.keyboard.insertText('# unsaved axle');
+  const archive=path.join(folder,'parts.zip');
+  await app.evaluate(({dialog},filePath)=>{dialog.showSaveDialog=async()=>({filePath});},archive);
+  await parts.click({button:'right'});await screen.getByRole('menuitem',{name:'Download folder (ZIP)'}).click();
+  await screen.waitForFunction(()=>!document.querySelector('#file-context-menu')||document.querySelector('#file-context-menu').hidden);
+  let bytes;
+  for(let i=0;i<60&&!bytes?.length;i++){try{bytes=await readFile(archive);}catch{}if(!bytes?.length)await new Promise(r=>setTimeout(r,50));}
+  assert.equal(strFromU8(unzipSync(bytes)['parts/axle.py']),'# unsaved axle');
+  assert.equal(await readFile(path.join(workspace,'parts','axle.py'),'utf8'),'');
+  await screen.getByRole('treeitem',{name:/helper.py/}).click();
   await app.close();app=null;screen=await launch();
   await screen.waitForFunction(()=>document.querySelector('#tab-source')?.textContent==='helper.py');
   assert.equal(await screen.locator('#workspace-name').textContent(),'Gearbox');

@@ -35,7 +35,7 @@ npm run dev
 
 ## Standalone viewer
 
-Duckbench Viewer opens the same Monaco editor, file explorer, Agent, Output, and CAD preview as the browser. Choose **Open workspace…** to work directly in a folder on disk. The app remembers the workspace and selected source file across launches. Use **New folder…** to organize files or **Open file** to inspect a STEP, STL or exported Duckbench HTML model. Local modeling and CAD import use the bundled Python runtime.
+Duckbench Viewer opens the same Monaco editor, file explorer, Agent, Output, and CAD preview as the browser. Choose **Open workspace…** to work directly in a folder on disk. The app remembers the workspace and selected source file across launches. Right-click in Explorer and choose **New folder…** to organize files or **Open file** to inspect a STEP, STL or exported Duckbench HTML model. Local modeling and CAD import use the bundled Python runtime.
 
 Run the viewer from the checkout or build a separate desktop application for the current platform.
 
@@ -139,6 +139,8 @@ The browser smoke uses installed Chrome through Playwright; set `TEST_BROWSER_CH
 Fresh sessions open `duck.py`, the bundled Puddle the duck example; an existing saved editor buffer is restored instead. **New file** creates a blank, uniquely named Python document and focuses the editor. Save chooses its desktop location or commits it to the browser project cache. The first cache migration preserves the previously remembered source file; only an exact, unedited legacy box template in `example.py` or `plate.py` is replaced with the duck. Modified legacy files are preserved with a separate `duck.py` starter.
 
 The combined **[filename | Preview]** tab highlights both halves in split view. Clicking a half returns to that single view; the split button shows both again. Use the titlebar controls to hide the explorer, show Output, or split the editor and preview. Drag the explorer divider or Output divider to resize them. In split view, drag the divider between editor and preview to adjust their widths (heights on narrow screens). The split ratio persists across reloads; focus the divider to use arrow keys, or double-click it for an equal split. Ctrl/Cmd+Enter builds the model; Ctrl/Cmd+S saves the source. The first browser run shows setup progress and explains the initial package downloads. Later builds show compact progress in the preview toolbar, preserving the previous model. **Refresh preview** appears when the active source or imported project differs from the last successful build, including edits made during a build.
+
+Right-click a file, folder, or the explorer background to create a file or folder there. A file’s menu creates siblings. A folder’s menu creates children. Choose **Download file** for a single file or **Download folder (ZIP)** for its full tree, including empty folders.
 
 Right-click a file in Explorer (or press Shift+F10) and choose **Delete file…**. A confirmation explains the action: desktop files move to Trash, while browser files are removed from the cached project without changing the originals on disk. Unsaved edits to the deleted file are discarded; deleting the last open file leaves a blank editor. Deleted browser dependencies are removed from the Python runtime on the next build.
 
