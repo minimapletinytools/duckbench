@@ -85,7 +85,8 @@ npx wrangler secret put OPENROUTER_API_KEY --config wrangler.duckbench.jsonc</co
 </ol>
 </section>
 <section id="viewer">
-<h2>Open a model in Duckbench Viewer</h2>
+<h2>Open a project in Duckbench Viewer</h2>
+<p>Choose <strong>Projects</strong> to create or switch workspaces. The desktop viewer opens folders on disk. The web viewer shares the browser workbench’s cached projects. Transfer a workspace with <strong>Export ZIP</strong> and <strong>Import project ZIP</strong>. <a href="https://minimapletinytools.github.io/duckbench/viewer/">Open the web viewer</a>.</p>
 <p>On Apple silicon, open <strong>release/viewer/mac-arm64/Duckbench Viewer.app</strong> and choose <strong>File → Open model…</strong>. Select a STEP, STP, STL or Duckbench viewer HTML file. The viewer runs offline and needs no account or cloud setup.</p>
 <p>To share a model from the workbench, build it and choose <strong>Preview → Viewer HTML ↓</strong>. The recipient can open the exported HTML directly in their browser. For an editable project backup, choose <strong>Projects → Export ZIP</strong>.</p>
 <p>To launch the desktop viewer from the project folder, install the dependencies and run these commands. Use <code>npm run package:viewer</code> to build a local application bundle.</p>

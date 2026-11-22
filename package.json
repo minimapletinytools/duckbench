@@ -18,7 +18,7 @@
     "predev": "npm run credits && npm run build:viewer",
     "icons": "node scripts/capture-icon.mjs",
     "build:viewer": "node scripts/build-viewer.mjs",
-    "viewer": "npm run build:viewer && electron electron/viewer-main.cjs",
+    "viewer": "npm run build && electron electron/viewer-main.cjs",
     "package:viewer": "uv run python scripts/prepare-runtime.py && npm run build && electron-builder --config viewer-builder.cjs --dir"
   },
   "dependencies": {

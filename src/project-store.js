@@ -33,9 +33,9 @@ export async function openProjectStore() {
       tx.objectStore('meta').get('active').onsuccess = event => done(event.target.result);
     }),
     select: id => transaction(['meta'], 'readwrite', tx => tx.objectStore('meta').put(id, 'active')),
-    create: (name, files, activeFile = Object.keys(files)[0], runTarget = null) => {
+    create: (name, files, activeFile = Object.keys(files)[0], runTarget = null, modelFiles = {}) => {
       const now = Date.now();
-      const record = {id: crypto.randomUUID(), name: name.trim().slice(0,80) || 'Untitled project', files,
+      const record = {id: crypto.randomUUID(), name: name.trim().slice(0,80) || 'Untitled project', files, modelFiles,
         activeFile, runTarget, expanded: [], created: now, updated: now, revision: 1};
       return transaction(['projects', 'meta'], 'readwrite', (tx, done) => {
         tx.objectStore('projects').add(record);

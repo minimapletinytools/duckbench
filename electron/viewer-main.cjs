@@ -8,16 +8,34 @@ const supported = name => extensions.includes(path.extname(name).slice(1).toLowe
 let queued = process.argv.slice(1).find(arg => !arg.startsWith('-') && supported(arg));
 let win, ready = false, generation = 0, child;
 
-function readCad(filename) {
+function pythonRequest(script,args,input) {
   const python = process.env.BUILD1234_PYTHON || path.join(app.isPackaged ? path.join(process.resourcesPath,'python') : path.join(root,'.venv'),
     process.platform === 'win32' ? (app.isPackaged ? 'python.exe' : 'Scripts/python.exe') : 'bin/python3');
-  const importer = path.join(app.isPackaged ? process.resourcesPath : root,'python','viewer_import.py');
+  const importer = path.join(app.isPackaged ? process.resourcesPath : root,'python',script);
   return new Promise((resolve,reject) => {
-    child = execFile(python,['-I',importer,filename],{maxBuffer:256*1024*1024},(error,stdout,stderr) => {
+    child = execFile(python,['-I',importer,...args],{maxBuffer:256*1024*1024},(error,stdout,stderr) => {
       if (error) return reject(new Error(stderr.trim().split('\n').pop() || error.message));
       try { resolve(JSON.parse(stdout)); } catch { reject(new Error('Could not decode the imported geometry.')); }
     });
+    child.stdin.on('error',()=>{});
+    child.stdin.end(input);
   });
+}
+async function buildPreview(filename){
+  const code=await readFile(filename,'utf8');
+  const response=await pythonRequest('runner.py',[],JSON.stringify({id:1,method:'run',params:{filename,code}})+'\n');
+  if(response.error)throw new Error(response.error);
+  return {name:path.basename(filename),version:1,scene:response.result.scene};
+}
+async function readModel(filename) {
+  if (path.extname(filename).toLowerCase() !== '.html') {
+    if (!supported(filename)) throw new Error('Choose a STEP, STL or Duckbench HTML file.');
+    return pythonRequest('viewer_import.py',[filename]);
+  }
+  const html = await readFile(filename,'utf8');
+  const match = html.match(/<script type="application\/json" id="duckbench-scene">([\s\S]*?)<\/script>/);
+  if (!match) throw new Error('Select an HTML viewer exported from Duckbench.');
+  return JSON.parse(match[1]);
 }
 async function openFile(filename) {
   if (!ready) { queued = filename; return; }
@@ -25,16 +43,7 @@ async function openFile(filename) {
   child?.kill();
   win.webContents.send('viewer:model',{message:'Opening ' + path.basename(filename) + '…'});
   try {
-    let model;
-    if (path.extname(filename).toLowerCase() === '.html') {
-      const html = await readFile(filename,'utf8');
-      const match = html.match(/<script type="application\/json" id="duckbench-scene">([\s\S]*?)<\/script>/);
-      if (!match) throw new Error('Select an HTML viewer exported from Duckbench.');
-      model = JSON.parse(match[1]);
-    } else {
-      if (!supported(filename)) throw new Error('Choose a STEP, STL or Duckbench HTML file.');
-      model = await readCad(filename);
-    }
+    const model=await readModel(filename);
     if (id === generation) win.webContents.send('viewer:model',{model});
   } catch (error) {
     if (id === generation) win.webContents.send('viewer:model',{message:error.message});
@@ -62,7 +71,9 @@ app.whenReady().then(() => {
     ready = true;
     if (queued) { const file = queued; queued = null; void openFile(path.resolve(file)); }
   });
-  win.loadFile(path.join(root,app.isPackaged ? 'dist' : 'public','standalone/viewer.html'));
+  require('./viewer-projects.cjs').installProjects({app,dialog,ipcMain,window:()=>win,readModel,buildPreview,
+    reset:()=>{generation++;child?.kill();}});
+  win.loadFile(path.join(root,'dist','viewer','index.html'));
   win.on('closed',() => { generation++; ready = false; child?.kill(); });
 });
 app.on('window-all-closed',() => app.quit());

@@ -1,5 +1,6 @@
 import bootstrapSource from '../public/ocp-bootstrap.py?raw';
 import runner from '../python/runner.py?raw';
+import importer from '../python/viewer_import.py?raw';
 let ready;
 let importedFiles=new Set();
 const send = data=>self.postMessage(data);
@@ -20,6 +21,7 @@ await micropip.install('ocp-tessellate==3.6.3')
 `);
   py.globals.set('__name__','build1234_runner');
   py.runPython(runner);
+  py.runPython(importer);
   py.FS.mkdirTree('/project');
   send({ready:true});
   return py;
@@ -28,6 +30,17 @@ let queue=Promise.resolve();
 self.onmessage=({data})=>{queue=queue.then(async()=>{
   try {
     const py=await (ready??=initialize().catch(error=>{ready=null;throw error;}));
+    if(data.method==='importCad') {
+      const {name,bytes}=data.params;
+      const file='/tmp/'+name.split(/[\\/]/).pop();
+      py.FS.writeFile(file,bytes);
+      try{
+        py.globals.set('_cad_path',file);
+        const result=JSON.parse(py.runPython('json.dumps(read_model(_cad_path))'));
+        send({id:data.id,result});
+      }finally{py.FS.unlink(file);}
+      return;
+    }
     if(data.method==='run') {
       send({status:'Building model…'});
       const relative=name=>name.replaceAll('\\','/').split('/').filter(part=>part && part!=='.' && part!=='..').join('/');

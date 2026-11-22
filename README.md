@@ -33,9 +33,13 @@ npm run dev
 
 `npm run package` stages the current platform's managed Python interpreter and its dependencies, then builds an Electron application in `release/app/`. Package on each target OS/architecture. A macOS arm64 application is the currently tested target. Local builds are unsigned (`build.mac.identity` is null). Configure signing explicitly for distribution. Distribution installers, notarization, auto-update, and other-platform packaging are follow-up work. `BUILD1234_PYTHON` can override the desktop Python executable.
 
-## Standalone viewer
+## Viewer projects
 
-Open **Duckbench Viewer** and choose **Open model…** (⌘O / Ctrl+O). It opens STEP, STP, STL and interactive HTML exported by Duckbench. STEP assemblies retain the part names available in the source. STL supplies a triangle mesh. The packaged viewer includes its CAD importer and works offline without signing in.
+Open **Projects** in the Duckbench title bar, then **Open project viewer**, or go directly to the [web viewer](https://minimapletinytools.github.io/duckbench/viewer/). The web viewer and workbench share the same named projects in this browser. In **Duckbench Viewer** on desktop, **Projects** lists recent folders. **Create project** creates a new folder in the location you choose. **Open folder** opens an existing workspace in place.
+
+Select a file in the project tree to inspect its source or geometry. For Python models, select the entry script and click **Build Python preview**. Desktop asks before running local Python, which has access to your files. The browser downloads its Python/CAD runtime on first use. **Add files**, **Export ZIP**, and **Import project ZIP** work on both platforms, including binary STL files and nested paths. Folder imports and ZIP exports include the supported files shown in the project tree. Import creates a separate project. The last open project is remembered across launches. Desktop **Forget** removes a recent-folder entry.
+
+To view a single exported model, choose **Open model…** (⌘O / Ctrl+O). It opens STEP, STP, STL and interactive HTML exported by Duckbench. STEP assemblies retain the part names available in the source. STL supplies a triangle mesh. The packaged viewer includes its CAD importer and works offline without signing in.
 
 Run the viewer from the checkout or build a separate desktop application for the current platform.
 
@@ -123,6 +127,7 @@ TEST_URL=http://127.0.0.1:4173 npm run test:browser
 TEST_URL=http://127.0.0.1:4173 node tests/workbench.mjs
 TEST_URL=http://127.0.0.1:4173 node tests/projects.mjs
 TEST_URL=http://127.0.0.1:4173 node tests/viewer-workflow.mjs
+TEST_URL=http://127.0.0.1:4173 node tests/viewer-projects.mjs
 ```
 
 The web agent test uses a local authenticated Cloudflare Worker fixture, a simulated OAuth provider and a model stub. It covers PKCE callback handling, real WebSocket and MCP requests, edit review and revocation. Set `KIGUMI_BACKEND_DIR` to use a different backend checkout.

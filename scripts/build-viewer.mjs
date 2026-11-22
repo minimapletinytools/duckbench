@@ -1,7 +1,6 @@
 import {build} from 'vite';
 import {createHash} from 'node:crypto';
 import {mkdir,writeFile,readFile} from 'node:fs/promises';
-import {viewerPage} from '../src/standalone/template.js';
 
 const output = await build({configFile:false, publicDir:false, logLevel:'warn', build:{
   write:false, target:'es2022', lib:{entry:'src/standalone/viewer.js',name:'DuckbenchViewer',formats:['iife']},
@@ -16,4 +15,5 @@ const notices = Object.fromEntries(await Promise.all(licenseFiles.map(async file
 const assets = {css,script,policy,notices};
 await mkdir('public/standalone',{recursive:true});
 await writeFile('public/standalone/renderer.json',JSON.stringify(assets));
-await writeFile('public/standalone/viewer.html',viewerPage(assets));
+// Existing bookmarks to the empty viewer open the project library. Exported scenes stay self-contained.
+await writeFile('public/standalone/viewer.html','<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=../viewer/"><title>Duckbench Viewer</title><a href="../viewer/">Open Duckbench Viewer</a>');

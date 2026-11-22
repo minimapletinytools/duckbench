@@ -7,11 +7,14 @@ export function exportProject(record) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function createProjectDialog({list, current, create, open, remove, snapshot}) {
+export function createProjectDialog({list, current, create, open, remove, snapshot, openViewer}) {
   const dialog = document.createElement('dialog');
   dialog.id = 'projects-dialog'; dialog.className = 'projects-dialog';
   dialog.setAttribute('aria-labelledby','projects-title');
   dialog.innerHTML = '<header><h2 id="projects-title">Project folders</h2><button id="close-projects" aria-label="Close projects">Close</button></header><p class="cache-explanation">Projects are saved in this browser’s cache, not to disk or the cloud. Clearing site data removes them. Export a ZIP to keep a backup.</p><form id="new-project-form"><input id="project-name" aria-label="New project name" placeholder="New project name" maxlength="80" required><button class="primary">New project</button></form><button id="import-zip">Import project ZIP…</button><input id="zip-input" type="file" accept=".zip" hidden><div id="project-list"></div><p id="project-error" role="alert" hidden></p>';
+  const viewer=document.createElement('a');viewer.href='./viewer/';viewer.textContent='Open project viewer';
+  viewer.onclick=event=>{event.preventDefault();void act(openViewer);};
+  dialog.querySelector('header').after(viewer);
   document.body.append(dialog);
   const rows = dialog.querySelector('#project-list');
   const error = dialog.querySelector('#project-error');
@@ -30,7 +33,7 @@ export function createProjectDialog({list, current, create, open, remove, snapsh
       const row=document.createElement('div');row.className='project-row';row.dataset.projectId=record.id;
       const info=document.createElement('div');info.className='project-info';
       const title=document.createElement('strong');title.textContent=record.name;
-      const details=document.createElement('small');const count=Object.keys(record.files).length;
+      const details=document.createElement('small');const count=Object.keys(record.files).length+Object.keys(record.modelFiles||{}).length;
       details.textContent=`${count} file${count===1?'':'s'}${record.id===current()?' · Open':''}`;
       info.append(title,details);
       const openButton=document.createElement('button');openButton.textContent='Open';openButton.onclick=()=>act(async()=>{await open(record.id);dialog.close();});

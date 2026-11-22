@@ -21,5 +21,5 @@ export async function createRuntime({onLog=()=>{},onStatus=()=>{}}={}) {
     const id=++next;
     return new Promise((resolve,reject)=>{pending.set(id,{resolve,reject});worker.postMessage({id,method,params});});
   }
-  return {get needsSetup(){return !initialized;},run:params=>request('run',params), exportModel:async (format,build_id)=>bytes(await request('export',{format,build_id})),cancel:stop,dispose:stop};
+  return {get needsSetup(){return !initialized;},run:params=>request('run',params),importCad:(name,bytes)=>request('importCad',{name,bytes}), exportModel:async (format,build_id)=>bytes(await request('export',{format,build_id})),cancel:stop,dispose:stop};
 }
