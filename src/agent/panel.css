@@ -17,7 +17,7 @@
 .agent-compose>div { display:flex; align-items:center; gap:8px; margin-top:6px; }
 .agent-compose output { flex:1; overflow-wrap:anywhere; }
 .explorer-search { margin:6px 10px; min-width:0; font-size:12px; }
-#toggle-agent { width:auto; padding-inline:7px; font-size:12px; }
+#toggle-agent.is-active { background:var(--ka-selected); }
 @media (max-width:760px) {
   .slot-right { position:fixed; z-index:15; inset:39px 0 24px auto; width:min(360px,100%); box-shadow:-4px 0 15px #0002; }
   #splitter-right { display:none; }
