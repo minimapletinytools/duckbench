@@ -27,8 +27,8 @@ try{
  assert.equal(await page.evaluate(()=>localStorage.getItem('build1234.code')),null);
  let downloads=0;page.on('download',()=>downloads++);
  await page.locator('#new-file').click();await page.keyboard.insertText('# Project A helper\nanswer = 42');
- await page.locator('#save').click();await waitForCache(page);
- assert.equal(downloads,0,'Save to cache must not download');
+ assert.equal(await page.locator('#save').count(),0);await waitForCache(page);
+ assert.equal(downloads,0,'Autosave must not download');
  await page.reload();await waitForCache(page);
  assert.equal(await page.getByRole('treeitem').count(),2);
  assert.match(await cachedCode(page),/Project A helper/);
