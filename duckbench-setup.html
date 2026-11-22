@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Duckbench setup · Sign-in and MCP</title>
+<style>
+* { box-sizing: border-box }
+body { margin: 0; background: #f6f8f6; color: #172e28; font: 16px/1.55 "Inter", system-ui, sans-serif }
+main { max-width: 51rem; margin: auto; padding: clamp(1.1rem, 5vw, 3rem) }
+h1, h2 { line-height: 1.15; text-wrap: balance }
+h1 { font-size: clamp(2rem, 6vw, 3.3rem); letter-spacing: -.045em; margin: 0 0 1rem }
+h2 { font-size: 1.4rem; margin: 0 0 .8rem }
+header { border-top: .35rem solid #27745e; padding: 1.5rem 0 .4rem }
+header p { font-size: 1.1rem }
+section { border-top: 1px solid #bbccc4; margin-top: 1.35rem; padding-top: 1.35rem }
+p { margin: .6rem 0 }
+a { color: #065b48; text-underline-offset: .17em }
+ul, ol { padding-left: 1.4rem }
+li + li { margin-top: .5rem }
+code { overflow-wrap: anywhere; font: .91em/1.5 "IBM Plex Mono", ui-monospace, monospace }
+pre, dd { background: #eaf0ec; border-radius: .35rem; padding: .6rem .85rem; margin: .3rem 0 .9rem }
+pre { white-space: pre-wrap }
+dt { font-weight: 600 }
+@media print { body { background: white } main { max-width: none; padding: 0 } h2, dt { break-after: avoid } pre, dd { break-inside: avoid } }
+</style>
+</head>
+<body><main>
+<header>
+<h1>Duckbench sign-in and MCP setup</h1>
+<p>Duckbench has its own Cloudflare Worker, <code>duckbench-backend</code>. It uses Kigumi’s existing Supabase project for GitHub and Google login and the same account balance for chat. The browser MCP relay runs on the Duckbench Worker.</p>
+</header>
+<nav aria-label="Setup steps"><ol>
+<li><a href="#signin">Add the sign-in redirects</a> for the Duckbench versions you use.</li>
+<li><a href="#chat">Add the two Worker secrets</a> to enable built-in chat.</li>
+<li><a href="#test">Connect and verify MCP</a> in the browser or desktop app.</li>
+</ol></nav>
+<section id="chat">
+<h2>Enable chat on the Duckbench Worker</h2>
+<p>In Cloudflare, open <strong>Workers &amp; Pages → duckbench-backend → Settings → Variables and Secrets</strong>. Add each value with type <strong>Secret</strong> and deploy the settings. You can also use the terminal commands below to enter the values at Wrangler’s prompts.</p>
+<dl>
+<dt><code>SUPABASE_SERVICE_ROLE_KEY</code></dt><dd>Use the shared Kigumi project’s legacy <code>service_role</code> key from <strong>Project Settings → API Keys</strong>. This Worker uses it to settle chat charges against the shared balance. <a href="https://supabase.com/dashboard/project/hhezlixmspumosexmfic/settings/api-keys">Open project API keys</a>.</dd>
+<dt><code>OPENROUTER_API_KEY</code></dt><dd>Use an OpenRouter key for model requests. A dedicated Duckbench key lets you set its own spending limit. <a href="https://openrouter.ai/settings/keys">Open OpenRouter keys</a>.</dd>
+</dl>
+<pre><code># From the duckbench folder
+cd ../kigumi-backend
+npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY --config wrangler.duckbench.jsonc
+npx wrangler secret put OPENROUTER_API_KEY --config wrangler.duckbench.jsonc</code></pre>
+<p>Enter the values directly in Cloudflare or the terminal prompt. The frontend uses only the public Supabase URL and publishable key. The MCP signing secret belongs to the Worker and is separate from these chat credentials.</p>
+</section>
+<section id="desktop">
+<h2>Connect a desktop MCP client</h2>
+<p>From the <code>duckbench</code> folder, run <code>npm run desktop</code>. For a fresh checkout, install the dependencies first with <code>npm ci</code> and <code>uv sync --locked</code>. Open a project and follow <a href="#test">Connect and verify</a>. The desktop app serves MCP on your machine. Sign-in is optional unless you also want the built-in chat.</p>
+</section>
+<section id="signin">
+<h2>Add Duckbench’s sign-in redirects</h2>
+<ol>
+<li>Open <strong>Authentication → URL Configuration</strong> in Kigumi’s existing Supabase project. <a href="https://supabase.com/dashboard/project/hhezlixmspumosexmfic/auth/url-configuration">Open Kigumi’s Supabase settings</a>.</li>
+<li>Under <strong>Redirect URLs</strong>, choose <strong>Add URL</strong> for each Duckbench version you plan to use. Paste each address exactly, including the trailing slash where shown.</li>
+</ol>
+<dl>
+<dt>Local browser</dt><dd><code>http://localhost:5173/</code></dd>
+<dt>Hosted browser on GitHub Pages</dt><dd><code>https://minimapletinytools.github.io/duckbench/</code></dd>
+<dt>Desktop chat sign-in</dt><dd><code>http://127.0.0.1:43781/auth/callback</code></dd>
+</dl>
+<p>These are additional entries in the project’s redirect list. Kigumi’s existing GitHub and Google OAuth apps already send sign-ins to Supabase. Supabase then sends the user back to Duckbench. The existing Site URL and provider credentials work for this setup. <a href="https://supabase.com/docs/guides/auth/redirect-urls">Supabase redirect URL guide</a>.</p>
+<h3>Try it locally</h3>
+<p>With dependencies installed, run this from the <code>duckbench</code> folder. The fixed host and port match both the redirect entry and the Duckbench Worker configuration.</p>
+<pre><code>npm run dev -- --host localhost --port 5173 --strictPort</code></pre>
+<p>Open the local app, choose <strong>Agent</strong>, and sign in with GitHub or Google. You should return to Duckbench and see your account in the panel. <a href="http://localhost:5173/">Open local Duckbench</a>.</p>
+</section>
+<section id="hosted">
+<h2>Publish and check the hosted app</h2>
+<p>The Duckbench Worker configuration includes the GitHub Pages origin and local development origins. For future backend releases, run <code>npm run deploy:duckbench</code> in <code>kigumi-backend</code>. This deployment uses the existing Supabase schema.</p>
+<p>Publish the updated frontend through Duckbench’s <strong>Deploy GitHub Pages</strong> workflow. Open the app at the exact redirect URL and sign in. Then connect MCP below. <a href="https://minimapletinytools.github.io/duckbench/">Open hosted Duckbench</a>.</p>
+<p>The public models endpoint is a quick Worker health check. It returns JSON even before model billing is configured. To test chat itself, sign in to the app with an account that has Kigumi credit and send a message. <a href="https://duckbench-backend.kigumi-backend.workers.dev/models">Check the Duckbench Worker</a>.</p>
+</section>
+<section id="test">
+<h2>Connect and verify</h2>
+<ol>
+<li>In Duckbench, open the project you want to share. In the browser, sign in first.</li>
+<li>Choose <strong>Agent → Account &amp; MCP → MCP connection → Connect MCP → Copy client setup</strong>.</li>
+<li>Paste the copied JSON into an MCP client that accepts <code>mcpServers</code>, or enter its URL and <code>Authorization</code> header in the client’s Streamable HTTP settings. The header contains a session credential, so share the setup only with the intended client.</li>
+<li>Keep Duckbench open. Ask the client to <em>call workbench_state and tell me the active filename</em>. The returned filename should match the Duckbench editor. Switching projects or disconnecting ends the session.</li>
+</ol>
+</section>
+<section id="viewer">
+<h2>Open a model in Duckbench Viewer</h2>
+<p>On Apple silicon, open <strong>release/viewer/mac-arm64/Duckbench Viewer.app</strong> and choose <strong>File → Open model…</strong>. Select a STEP, STP, STL or Duckbench viewer HTML file. The viewer runs offline and needs no account or cloud setup.</p>
+<p>To share a model from the workbench, build it and choose <strong>Preview → Viewer HTML ↓</strong>. The recipient can open the exported HTML directly in their browser. For an editable project backup, choose <strong>Projects → Export ZIP</strong>.</p>
+<p>To launch the desktop viewer from the project folder, install the dependencies and run these commands. Use <code>npm run package:viewer</code> to build a local application bundle.</p>
+<pre><code>npm ci
+uv sync
+npm run viewer</code></pre>
+</section>
+</main></body>
+</html>

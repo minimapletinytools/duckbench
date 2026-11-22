@@ -36,8 +36,14 @@ function workspacePath(filename){
  if(relative.startsWith('..') || path.isAbsolute(relative))throw new Error('File is outside the open folder.');
  return resolved;
 }
+function explorerName(name){return !name.startsWith('.') && name!=='node_modules' && name!=='release';}
+function explorerPath(filename){
+ const target=workspacePath(filename);
+ if(path.relative(workspace,target).split(path.sep).some(part=>!explorerName(part)))throw new Error('Select a file or folder in Explorer.');
+ return target;
+}
 function entries(directory){
- return fs.readdirSync(directory,{withFileTypes:true}).filter(item=>!item.name.startsWith('.') && item.name!=='node_modules' && item.name!=='release').filter(item=>item.isDirectory() || item.isFile()).map(item=>({name:item.name,path:path.join(directory,item.name),directory:item.isDirectory()})).sort((a,b)=>Number(b.directory)-Number(a.directory)||a.name.localeCompare(b.name));
+ return fs.readdirSync(directory,{withFileTypes:true}).filter(item=>explorerName(item.name)).filter(item=>item.isDirectory() || item.isFile()).map(item=>({name:item.name,path:path.join(directory,item.name),directory:item.isDirectory()})).sort((a,b)=>Number(b.directory)-Number(a.directory)||a.name.localeCompare(b.name));
 }
 ipcMain.handle('workspace:open',async()=>{
  const picked=await dialog.showOpenDialog(win,{properties:['openDirectory']});
@@ -45,8 +51,28 @@ ipcMain.handle('workspace:open',async()=>{
  workspace=fs.realpathSync(picked.filePaths[0]);
  return {root:workspace,name:path.basename(workspace),entries:entries(workspace)};
 });
-ipcMain.handle('workspace:list',(_,directory)=>entries(workspacePath(directory)));
+ipcMain.handle('workspace:list',(_,directory)=>entries(explorerPath(directory)));
 ipcMain.handle('workspace:read',(_,filename)=>{filename=workspacePath(filename);const code=fs.readFileSync(filename,'utf8');watch(filename);return {filename,code};});
+ipcMain.handle('workspace:agent-text', (_,filename) => {
+ const target=explorerPath(filename);
+ if(!/\.(py|json|txt|csv|svg|step|stp|md|toml|yaml|yml)$/i.test(target)) throw new Error('Select a project text file.');
+ const stat=fs.statSync(target);
+ if(!stat.isFile() || stat.size>4*1024*1024) throw new Error('Select a text file under 4 MiB.');
+ return fs.readFileSync(target,'utf8');
+});
+ipcMain.handle('workspace:create-file',(_,relative)=>{
+ if(typeof relative!=='string'||path.isAbsolute(relative)||relative.split(/[\\/]/).some(part=>!part||!explorerName(part)||part==='..'))throw new Error('Enter a project-relative name.');
+ const parent=explorerPath(path.join(workspace,path.dirname(relative)));
+ const target=path.join(parent,path.basename(relative));
+ fs.writeFileSync(target,'',{flag:'wx'});watch(target);return target;
+});
+ipcMain.handle('workspace:reveal',(_,filename)=>shell.showItemInFolder(explorerPath(filename)));
+ipcMain.handle('workspace:save-buffer',(_,data)=>{
+ const target=explorerPath(data.filename);
+ if(fs.readFileSync(target,'utf8')!==data.saved)throw new Error(path.basename(target)+' changed on disk. Reopen it before saving.');
+ fs.writeFileSync(target,data.code,'utf8');
+});
+ipcMain.handle('viewer:assets',()=>JSON.parse(fs.readFileSync(path.join(root,'dist/standalone/renderer.json'),'utf8')));
 ipcMain.handle('file:trash',async(_,filename)=>{
  if(typeof filename!=='string'||!path.isAbsolute(filename))throw new Error('Select an existing file first.');
  // Only regular files explicitly opened by the user or inside the selected workspace.
@@ -57,6 +83,6 @@ ipcMain.handle('file:trash',async(_,filename)=>{
  openedFiles.delete(resolved);
  if(watchedFile===filename||watchedFile===resolved){watcher?.close();watcher=null;watchedFile=null;}
 });
-app.whenReady().then(()=>{const icon=path.join(root,'dist/icons/duck-512.png');if(process.platform==='darwin')app.dock?.setIcon(icon);win=new BrowserWindow({icon,width:1450,height:920,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});win.webContents.setWindowOpenHandler(({url})=>{if(url.startsWith('https://'))shell.openExternal(url);return {action:'deny'};});win.webContents.on('will-navigate',event=>event.preventDefault());win.loadFile(path.join(root,'dist/index.html'));});
+app.whenReady().then(()=>{const icon=path.join(root,'dist/icons/duck-512.png');if(process.platform==='darwin')app.dock?.setIcon(icon);win=new BrowserWindow({icon,width:1450,height:920,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});win.webContents.setWindowOpenHandler(({url})=>{if(url.startsWith('https://'))shell.openExternal(url);return {action:'deny'};});win.webContents.on('will-navigate',event=>event.preventDefault());require('./agent.cjs').installAgent({win,ipcMain,shell});win.loadFile(path.join(root,'dist/index.html'));});
 app.on('window-all-closed',()=>app.quit());
 app.on('before-quit',()=>{watcher?.close();stop();});

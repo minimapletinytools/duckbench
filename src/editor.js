@@ -11,5 +11,11 @@ export function createEditor(element,{value='',onChange=()=>{},onCursor=()=>{}}=
   let setting=false;
   const change=model.onDidChangeContent(()=>{if(!setting)onChange(model.getValue());});
   const cursor=instance.onDidChangeCursorPosition(event=>onCursor(event.position));
-  return {getValue:()=>model.getValue(),setValue:value=>{setting=true;try{if(model.getValue()!==value)model.setValue(value);}finally{setting=false;}},focus:()=>instance.focus(),layout:()=>{if(element.clientWidth&&element.clientHeight)instance.layout();},setFilename:filename=>{instance.updateOptions({ariaLabel:`Python editor: ${filename||'untitled.py'}`});element.setAttribute('aria-label',`Python editor: ${filename||'untitled.py'}`);},dispose:()=>{media.removeEventListener('change',theme);change.dispose();cursor.dispose();instance.dispose();model.dispose();}};
+  function replaceRange(start,length,text) {
+    const from=model.getPositionAt(start),to=model.getPositionAt(start+length);
+    instance.pushUndoStop();
+    instance.executeEdits('agent',[{range:new monaco.Range(from.lineNumber,from.column,to.lineNumber,to.column),text}]);
+    instance.pushUndoStop();
+  }
+  return {goToLine:line=>{instance.setPosition({lineNumber:line,column:1});instance.revealLineInCenter(line);instance.focus();},replaceRange,getValue:()=>model.getValue(),setValue:value=>{setting=true;try{if(model.getValue()!==value)model.setValue(value);}finally{setting=false;}},focus:()=>instance.focus(),layout:()=>{if(element.clientWidth&&element.clientHeight)instance.layout();},setFilename:filename=>{instance.updateOptions({ariaLabel:`Python editor: ${filename||'untitled.py'}`});element.setAttribute('aria-label',`Python editor: ${filename||'untitled.py'}`);},dispose:()=>{media.removeEventListener('change',theme);change.dispose();cursor.dispose();instance.dispose();model.dispose();}};
 }

@@ -1,8 +1,12 @@
 import {_electron as electron} from 'playwright';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import assert from 'node:assert/strict';
-const app=await electron.launch({...(process.env.TEST_APP ? {executablePath:process.env.TEST_APP,args:[]} : {args:['.']}),env:{...process.env,ELECTRON_RUN_AS_NODE:''}});
+const profile=await fs.mkdtemp(path.join(os.tmpdir(),'duckbench-desktop-'));
+const args=process.env.TEST_APP?[]:['.'];
+args.push('--user-data-dir='+profile);
+const app=await electron.launch({...(process.env.TEST_APP?{executablePath:process.env.TEST_APP}:{}),args,env:{...process.env,ELECTRON_RUN_AS_NODE:''}});
 try {
  const page=await app.firstWindow();const errors=[];
  page.on('pageerror',e=>errors.push(e.message));
@@ -44,4 +48,4 @@ try {
  await fs.mkdir('test-artifacts',{recursive:true});
  await page.screenshot({path:'test-artifacts/desktop.png'});
  console.log('Desktop: Monaco, folder explorer, full canvas bounds, panel toggles, window resize, model and STEP passed.');
-} finally {await app.close();}
+} finally {await app.close();await fs.rm(profile,{recursive:true,force:true});}

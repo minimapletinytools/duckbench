@@ -12,3 +12,4 @@ test-artifacts/
 # Regenerated from installed dependencies before every build.
 public/about.html
 public/licenses/
+public/standalone/

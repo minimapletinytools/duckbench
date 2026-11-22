@@ -1,5 +1,5 @@
 /** A keyboard-accessible context menu and confirmation shared by both hosts. */
-export function createFileActions({isDiskFile, removeFile, onError}) {
+export function createFileActions({isDiskFile, removeFile, actions = () => [], onError}) {
   const menu = document.createElement('div');
   menu.id = 'file-context-menu';
   menu.className = 'file-context-menu';
@@ -50,6 +50,13 @@ export function createFileActions({isDiskFile, removeFile, onError}) {
       const open = event => {
         event.preventDefault();
         selected = entry; sourceRow = row;
+        for (const item of menu.querySelectorAll('[data-action]')) item.remove();
+        for (const action of actions(entry)) {
+          const item=document.createElement('button');
+          item.dataset.action='';item.setAttribute('role','menuitem');item.textContent=action.label;
+          item.onclick=async()=>{closeMenu();try{await action.run();}catch(error){onError(error);}};
+          menu.insertBefore(item,menu.lastElementChild);
+        }
         menu.hidden = false;
         const bounds = row.getBoundingClientRect();
         const x = event.type === 'contextmenu' && event.clientX ? event.clientX : bounds.left + 20;

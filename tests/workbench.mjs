@@ -45,7 +45,7 @@ try{
  await page.locator('#new-file').click();
  assert.equal(await page.locator('#tab-source').textContent(),'untitled-2.py');
  assert.equal(await cachedCode(page),'');
- await page.getByRole('treeitem',{name:'◇  untitled.py',exact:true}).click();
+ await page.getByRole('treeitem',{name:/\buntitled\.py\b/}).click();
  assert.equal(await cachedCode(page),'# keep these edits');
  await waitForCache(page);
  await page.reload();

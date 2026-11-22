@@ -11,12 +11,17 @@ import time
 import traceback
 
 _last_result = None
+_preview_results = {}
 _project_modules = set()
 
 
-def run_model(code, filename="model.py"):
+def run_model(code, filename="model.py", build_id=None, displayed_build=None):
     """Execute source in a fresh namespace and return its result scene."""
     global _last_result, _project_modules
+    # Keep the displayed shape exportable while the UI attempts to render its replacement.
+    for previous in list(_preview_results):
+        if previous != displayed_build:
+            del _preview_results[previous]
     from build123d import Shape, BuildPart, BuildSketch, BuildLine
     from ocp_tessellate.convert import export_three_cad_viewer_js
     start = time.perf_counter()
@@ -46,6 +51,8 @@ def run_model(code, filename="model.py"):
             raise TypeError("result must be a build123d Shape or a completed BuildPart, BuildSketch or BuildLine. Use Compound(children=[...]) for assemblies.")
         scene = json.loads(export_three_cad_viewer_js(None, result))
         _last_result = result
+        if build_id is not None:
+            _preview_results[build_id] = result
         return {"scene": scene, "elapsed": time.perf_counter() - start}
     finally:
         _project_modules = {name for name, mod in sys.modules.items()
@@ -57,16 +64,17 @@ def run_model(code, filename="model.py"):
         sys.argv[:] = old_argv
 
 
-def export_model(format):
+def export_model(format, build_id=None):
     """Export the most recent successful model as base64."""
     from build123d import export_step, export_stl
-    if _last_result is None:
+    shape = _last_result if build_id is None else _preview_results.get(build_id)
+    if shape is None:
         raise ValueError("Run a model before exporting.")
     if format not in ("step", "stl"):
         raise ValueError("Supported formats: step, stl")
     with tempfile.TemporaryDirectory() as folder:
         target = Path(folder) / ("model." + format)
-        (export_step if format == "step" else export_stl)(_last_result, str(target))
+        (export_step if format == "step" else export_stl)(shape, str(target))
         return base64.b64encode(target.read_bytes()).decode("ascii")
 
 
@@ -74,7 +82,7 @@ def dispatch(request):
     if request["method"] == "run":
         return run_model(**request["params"])
     if request["method"] == "export":
-        return export_model(request["params"]["format"])
+        return export_model(**request["params"])
     raise ValueError("Unknown runner method")
 
 

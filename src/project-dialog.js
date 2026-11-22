@@ -1,10 +1,9 @@
-import {zipSync, strToU8} from 'fflate';
+import {projectArchive,restoreArchive} from './project-archive.js';
 
 export function exportProject(record) {
-  const folder = record.name.replace(/[^\w.-]+/g,'_').replace(/^\.+/,'') || 'project';
-  const entries = Object.fromEntries(Object.entries(record.files).map(([name, text]) => [`${folder}/${name}`, strToU8(text)]));
-  const url = URL.createObjectURL(new Blob([zipSync(entries)], {type:'application/zip'}));
-  const link = document.createElement('a'); link.href = url; link.download = `${folder}.zip`; link.click();
+  const {filename,bytes}=projectArchive(record);
+  const url=URL.createObjectURL(new Blob([bytes],{type:'application/zip'}));
+  const link=document.createElement('a');link.href=url;link.download=filename; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
@@ -12,7 +11,7 @@ export function createProjectDialog({list, current, create, open, remove, snapsh
   const dialog = document.createElement('dialog');
   dialog.id = 'projects-dialog'; dialog.className = 'projects-dialog';
   dialog.setAttribute('aria-labelledby','projects-title');
-  dialog.innerHTML = '<header><h2 id="projects-title">Project folders</h2><button id="close-projects" aria-label="Close projects">Close</button></header><p class="cache-explanation">Projects are saved in this browser’s cache, not to disk or the cloud. Clearing site data removes them. Export a ZIP to keep a backup.</p><form id="new-project-form"><input id="project-name" aria-label="New project name" placeholder="New project name" maxlength="80" required><button class="primary">New project</button></form><div id="project-list"></div><p id="project-error" role="alert" hidden></p>';
+  dialog.innerHTML = '<header><h2 id="projects-title">Project folders</h2><button id="close-projects" aria-label="Close projects">Close</button></header><p class="cache-explanation">Projects are saved in this browser’s cache, not to disk or the cloud. Clearing site data removes them. Export a ZIP to keep a backup.</p><form id="new-project-form"><input id="project-name" aria-label="New project name" placeholder="New project name" maxlength="80" required><button class="primary">New project</button></form><button id="import-zip">Import project ZIP…</button><input id="zip-input" type="file" accept=".zip" hidden><div id="project-list"></div><p id="project-error" role="alert" hidden></p>';
   document.body.append(dialog);
   const rows = dialog.querySelector('#project-list');
   const error = dialog.querySelector('#project-error');
@@ -47,6 +46,15 @@ export function createProjectDialog({list, current, create, open, remove, snapsh
       row.append(info,openButton,exportButton,deleteButton);rows.append(row);
     }
   }
+  const zipInput=dialog.querySelector('#zip-input');
+  dialog.querySelector('#import-zip').onclick=()=>zipInput.click();
+  zipInput.onchange=()=>act(async()=>{
+    const file=zipInput.files[0];zipInput.value='';
+    if(!file)return;
+    if(file.size>128*1024*1024)throw new Error('Project ZIP is too large.');
+    const restored=restoreArchive(new Uint8Array(await file.arrayBuffer()),file.name);
+    await create(restored.name,restored.files,restored);dialog.close();
+  });
   dialog.querySelector('#close-projects').onclick=()=>dialog.close();
   dialog.addEventListener('cancel',event=>{if(working)event.preventDefault();});
   dialog.addEventListener('close',()=>document.querySelector('#projects')?.focus());

@@ -2,7 +2,7 @@ function bytes(base64) {return Uint8Array.from(atob(base64), c=>c.charCodeAt(0))
 export async function createRuntime({onLog=()=>{},onStatus=()=>{}}={}) {
   if(window.desktop) {
     const unsubscribe=window.desktop.onLog(onLog);
-    return {run: ({code,filename})=>window.desktop.request({method:'run',params:{code,filename}}), exportModel: async format=>bytes(await window.desktop.request({method:'export',params:{format}})), cancel:()=>window.desktop.cancel(),dispose:()=>{unsubscribe();window.desktop.cancel();}};
+    return {run: ({files,...params})=>window.desktop.request({method:'run',params}), exportModel: async (format,build_id)=>bytes(await window.desktop.request({method:'export',params:{format,build_id}})), cancel:()=>window.desktop.cancel(),dispose:()=>{unsubscribe();window.desktop.cancel();}};
   }
   let worker, next=0, initialized=false;
   const pending=new Map();
@@ -21,5 +21,5 @@ export async function createRuntime({onLog=()=>{},onStatus=()=>{}}={}) {
     const id=++next;
     return new Promise((resolve,reject)=>{pending.set(id,{resolve,reject});worker.postMessage({id,method,params});});
   }
-  return {get needsSetup(){return !initialized;},run:params=>request('run',params), exportModel:async format=>bytes(await request('export',{format})),cancel:stop,dispose:stop};
+  return {get needsSetup(){return !initialized;},run:params=>request('run',params), exportModel:async (format,build_id)=>bytes(await request('export',{format,build_id})),cancel:stop,dispose:stop};
 }

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Duckbench proposal · Project explorer and agent</title>
+<style>
+*{box-sizing:border-box}body{margin:0;color:#202a29;background:#f8faf9;font:16px/1.55 Inter,system-ui,sans-serif}main{max-width:1050px;margin:auto;padding:clamp(20px,5vw,62px)}h1,h2,h3{line-height:1.17;text-wrap:balance}h1{font-size:clamp(2.1rem,5vw,3.5rem);letter-spacing:-.048em;margin:0 0 1rem}h2{font-size:1.55rem;margin:2.1rem 0 .7rem}h3{font-size:1.12rem;margin:.8rem 0 .3rem}p{margin:.45rem 0 .8rem}header{border-top:5px solid #286b58;padding-top:1.4rem}header p{font-size:1.14rem;max-width:72ch}ul,ol{padding-left:1.3rem}li{margin:.35rem 0}code,pre{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.91em}code{overflow-wrap:anywhere}figure{margin:1.4rem 0}figcaption{margin-top:.5rem;font-size:.87rem;color:#4e6259}.mock{display:grid;grid-template-columns:minmax(0,.84fr) minmax(0,1.1fr) minmax(0,1.25fr);background:white;border:1px solid #b7c4be;border-radius:7px;overflow:hidden;font-size:.88rem}.pane{min-width:0}.pane+.pane{border-left:1px solid #cdd6d1}.bar{font-weight:650;padding:9px 12px;background:#edf2ee;border-bottom:1px solid #cdd6d1}.content{padding:11px 12px}.file{padding:3px 6px}.active{background:#e3edf8}.note{color:#576961;font-size:.86em}.code{white-space:pre-wrap;margin:0}.change{font:.95em/1.65 ui-monospace,monospace;padding:5px 8px;margin:.4rem 0}.del{background:#fff0ed}.add{background:#e9f5ef}.actions{font-size:.9em;font-weight:600;color:#19593e}.stage{border-top:1px solid #c6d2cc;padding:.7rem 0}.stage p{max-width:84ch}a{color:#1a5f4c}@media(max-width:650px){.mock{grid-template-columns:1fr}.pane+.pane{border-left:0;border-top:1px solid #cdd6d1}}@media print{body{background:white}main{padding:0}figure,.stage{break-inside:avoid}h2{break-after:avoid}}
+</style>
+</head>
+<body><main>
+<header><h1>Project explorer and agent for Duckbench</h1>
+<p>Borrow Kigumi’s panel layout, file navigation and edit review. Organize Duckbench around the Python file being edited, the script that builds the model, and the build that produced the visible geometry.</p></header>
+
+<h2>The first release in one project</h2>
+<p>A bracket has two files. <code>model.py</code> creates the solid and imports <code>width</code> from <code>dimensions.py</code>. While looking at the helper, the user asks the agent to widen the bracket from 24 to 36&nbsp;mm.</p>
+<figure>
+<div class="mock">
+<div class="pane"><div class="bar">Projects ▾ · Bracket</div><div class="content"><div class="note">Browser project</div><div class="file">▾ Bracket</div><div class="file">　model.py <span class="note">· Run target</span></div><div class="file active">　dimensions.py</div></div></div>
+<div class="pane"><div class="bar">dimensions.py &nbsp; | &nbsp; Preview</div><div class="content"><pre class="code">width = 24</pre><p class="note">Run model.py</p><p>Last successful preview<br><strong>model.py · 24 mm bracket</strong></p></div></div>
+<div class="pane"><div class="bar">Agent &nbsp; <span class="note">History · New chat</span></div><div class="content"><div class="note">Read model.py and dimensions.py</div><p>Change the width used by the box.</p><strong>dimensions.py</strong><div class="change del">− width = 24</div><div class="change add">+ width = 36</div><p class="actions">Apply &nbsp; · &nbsp; Apply &amp; Run model.py &nbsp; · &nbsp; Discard</p></div></div>
+</div><figcaption>Proposed layout before the user accepts the edit. The existing 24 mm bracket stays visible until the next successful build.</figcaption>
+</figure>
+
+<section id="projects">
+<h2>Projects, browser storage and export</h2>
+<p><strong>Projects</strong> stays visible at the top of the explorer. In the browser, it opens the named project list with Create, Open, Delete and Export ZIP. Import Folder brings the supported files into a new project. In the desktop app, Open Folder works directly with files on disk.</p>
+<p><strong>Browser files already autosave in IndexedDB.</strong> Each project has its own ID and relative file paths. Reopening Duckbench restores the last project and active file. Keep the save indicator and protection against overwriting edits from another tab. Show “Saved in this browser” beside the project name so users know why a ZIP backup matters before clearing site data. Projects remain usable while signed out.</p>
+<ul>
+<li><strong>Project menu → Export project ZIP.</strong> Keep the existing editable source archive. Add <strong>Import project ZIP</strong> in phase 1 so a downloaded project can be restored directly. A small versioned manifest can carry the project name, active file and run target. Accept older source-only ZIPs too. Restore into a new project ID so an existing project with the same name survives.</li>
+<li><strong>File menu → Download file.</strong> Keep the browser shortcut for someone who only wants one source file.</li>
+<li><strong>Preview → Export STEP or STL.</strong> Keep geometry export beside the built model. Show which successful build will be exported if the user has edited the source or a subsequent build failed. The future standalone viewer is a fourth export choice for sharing an interactive preview.</li>
+</ul>
+<p><strong>Phase 1 acceptance.</strong> Create two named projects containing a file with the same name. Edit one, reload and verify both retain their own contents. Export a project with a nested helper, then import its ZIP into a fresh browser profile. The restored project should rebuild with the same relative imports and run target.</p>
+</section>
+
+<h2>What to borrow from Kigumi</h2>
+<ul>
+<li><strong>Explorer.</strong> Adopt its compact project header, expandable folder rows, keyboard navigation and actions on the selected row. Give Duckbench one primary tree of real project files. Kigumi’s Frames and Patterns sections depend on its timber-frame model. Duckbench’s assembly hierarchy already has a home in the 3D viewer.</li>
+<li><strong>Agent.</strong> Adopt its conversation-first layout, model picker, history, file mentions and inline diffs. Put account and MCP setup behind a disclosure, with a visible connected indicator and access to Disconnect. Keep Stop beside the composer during a turn. On narrow screens, the explorer and agent can each occupy the available width and return focus to the editor when closed.</li>
+<li><strong>CAD behavior.</strong> A single-file project runs the active Python file as it does today. For a multi-file project, offer <strong>Set as run target</strong> on a Python file. Show its name on Run and remember it per project. Opening a helper leaves the chosen target in place. Distinguish the last successful preview from a stale or failed build.</li>
+</ul>
+
+<h2>Delivery order</h2>
+<div class="stage"><h3>1. Make file navigation and Run agree</h3>
+<p>Put project switching, folder import/open and ZIP export in the explorer’s project menu. Keep Run, Stop and CAD exports near the preview. Give the tree named file creation, active and unsaved indicators, a context menu and Arrow-key navigation. Extend the existing ⌘P / Ctrl+P search with selectable matches. Persist expanded folders and the optional run target per project. Desktop gets Reveal in Finder or Explorer, and browser projects keep Download file.</p>
+<p><strong>Acceptance.</strong> Open <code>dimensions.py</code> using the keyboard, run the pinned <code>model.py</code>, reopen the project and recover the target. If the target was removed, prompt for a new target before building. An existing single-file project still works without setup.</p></div>
+
+<div class="stage"><h3>2. Review a real CAD edit end to end</h3>
+<p>Let the user attach a file with <code>@</code> or <strong>Ask agent about this file</strong>. Display the files read during the turn and a unified diff with the project-relative path. Extend the current one-edit proposal to any text file in the selected project, one file at a time. Give chat and external MCP clients the same proposal and build-result tools. A build result should include the target, success or failure, project traceback locations, and which build is still on screen.</p>
+<p><strong>Acceptance.</strong> With <code>model.py</code> open, propose the width change in <code>dimensions.py</code>. Apply edits the source and marks the preview stale. Apply &amp; Run builds <code>model.py</code> using that change. If the source changes after review starts, request a fresh diff. If the build fails, a traceback link opens the project file at the failing line and the previous geometry stays visible.</p>
+<p><strong>Desktop detail.</strong> Today Electron runs the active source buffer but Python imports sibling files from disk. For the first release, offer <strong>Save changed files &amp; Run</strong> when imported helpers may be unsaved. Browser builds can use the current project buffers. On desktop, clicking Apply alone leaves the edit unsaved. Native execution stays an explicit user action.</p></div>
+
+<div class="stage"><h3>3. Resume work across sessions</h3>
+<p>Add locally saved conversations scoped to the project and signed-in account, a history picker, restored drafts, and model selection from the existing Worker catalog. Store browser history by project ID and desktop history in application data keyed to the folder. Restore past edit decisions as history. A fresh edit always checks the current file.</p>
+<p><strong>Acceptance.</strong> Reopen the bracket project and resume its conversation. Switch to another project or account and its history is separate. Switching projects also disconnects the previous MCP session.</p></div>
+
+<section class="stage" id="standalone-viewer"><h3>4. Share a standalone viewer</h3>
+<p>Start with <strong>Export interactive viewer (.html)</strong> from a successful preview. The recipient opens one file in a browser, orbits, pans and zooms the model, and toggles parts in the assembly tree. Bundle the display geometry, labels, colors and viewer assets in the file so it opens offline without an account, Python, or access to the author’s project.</p>
+<p>Duckbench already passes a tessellated scene from the Python runner to the JavaScript viewer. In phase 1, retain that scene with its successful build identity. In phase 4, build a read-only viewer entry point around the same renderer and a versioned scene format. Keep source files, chat and credentials out of the export. The same entry point could later power a dedicated desktop viewer. Opening arbitrary STEP or STL files directly would additionally require importers for those formats.</p>
+<p><strong>Acceptance.</strong> Export a two-part assembly, close Duckbench, and open the HTML in a fresh browser profile with the network disconnected. Both named parts should appear, orbit correctly and toggle independently.</p></section>
+
+<h2>Implementation and scope</h2>
+<p>Give the explorer, chat and MCP a shared interface for project-relative paths, editor buffers and file revisions. Build that interface on Duckbench’s existing Electron and IndexedDB implementations. Extend the existing build path to accept a target independent of editor focus and record the last attempted and successful builds. The browser relay, local MCP transport, Worker and shared Supabase login can stay as deployed.</p>
+<p>Ship phases 1 and 2 as the first milestone. Defer batch refactors, project-wide checkpoints, geometry-selection attachments and a catalog of runnable models until the two-file workflow works well on both hosts. Renaming files and folders can follow once dirty buffers, imports and pinned targets have defined behavior.</p>
+</main></body></html>

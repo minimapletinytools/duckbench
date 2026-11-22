@@ -17,6 +17,15 @@ class RunnerTests(unittest.TestCase):
             with self.assertRaises(error):runner.run_model(code)
         self.assertIn(b'ISO-10303-21',base64.b64decode(runner.export_model('step')))
         self.assertGreater(len(base64.b64decode(runner.export_model('stl'))),84)
+    def test_export_uses_displayed_build_after_render_failure(self):
+        model = 'from build123d import Box\nresult = Box({}, 2, 3)'
+        runner.run_model(model.format(4), build_id=1)
+        displayed = runner.export_model('stl', build_id=1)
+        for build in (2, 3):
+            runner.run_model(model.format(20 + build), build_id=build, displayed_build=1)
+            self.assertNotEqual(runner.export_model('stl', build_id=build), displayed)
+            self.assertEqual(runner.export_model('stl', build_id=1), displayed)
+
     def test_builder_sketch_line_assembly(self):
         for code in ['with BuildPart() as result:\n Box(1,2,3)', 'result = Circle(4)', 'result = Line((0,0),(3,4))', 'result = Compound(children=[Box(2,2,2), Pos(5,0,0)*Sphere(1)])']:
             self.assertTrue(runner.run_model('from build123d import *\n'+code)['scene']['parts'])
