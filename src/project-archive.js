@@ -6,7 +6,8 @@ export function projectArchive(record) {
   const folder = record.name.replace(/[^\w.-]+/g,'_').replace(/^\.+/,'') || 'project';
   const entries = Object.fromEntries(Object.entries(record.files).map(([name,text])=>[folder+'/'+name,strToU8(text)]));
   for (const [name,bytes] of Object.entries(record.modelFiles || {})) entries[folder+'/'+name] = bytes;
-  entries[manifest] = strToU8(JSON.stringify({version:1,folder,name:record.name,activeFile:record.activeFile,runTarget:record.runTarget||null}));
+  for(const name of record.folders||[])entries[folder+'/'+name+'/']=new Uint8Array();
+  entries[manifest] = strToU8(JSON.stringify({version:1,folder,name:record.name,folders:record.folders||[],activeFile:record.activeFile,runTarget:record.runTarget||null}));
   return {filename:folder+'.zip',bytes:zipSync(entries)};
 }
 export function restoreArchive(bytes, filename) {
@@ -46,7 +47,17 @@ export function restoreArchive(bytes, filename) {
       if (paths.has(pieces.slice(0,i).join('/'))) throw new Error('A ZIP path is both a file and a folder.');
     }
   }
+  const folders=info?.folders??[];
+  if(!Array.isArray(folders)||folders.some(name=>!validPath(name)||name.split('/').some(p=>['__proto__','constructor','prototype'].includes(p))||
+      name.split('/').some((_,i,parts)=>paths.has(parts.slice(0,i+1).join('/')))))throw new Error('Invalid project folder.');
   const activeFile = typeof info?.activeFile === 'string' && Object.hasOwn(files,info.activeFile) ? info.activeFile : Object.keys(files).find(p=>p.endsWith('.py')) || Object.keys(files)[0];
-  return {name:info?.name || folder || filename.replace(/\.zip$/i,''), files, modelFiles, activeFile,
+  return {name:info?.name || folder || filename.replace(/\.zip$/i,''), files, modelFiles, folders, activeFile,
     runTarget:typeof info?.runTarget === 'string' && Object.hasOwn(files,info.runTarget) && info.runTarget.endsWith('.py') ? info.runTarget : null};
+}
+
+export function exportProject(record) {
+  const {filename,bytes}=projectArchive(record);
+  const url=URL.createObjectURL(new Blob([bytes],{type:'application/zip'}));
+  const link=document.createElement('a');link.href=url;link.download=filename; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

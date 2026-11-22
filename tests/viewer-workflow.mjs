@@ -36,14 +36,14 @@ try {
   await page.goto(process.env.TEST_URL || 'http://127.0.0.1:4173');
   await waitForCache(page);
   async function restore() {
-    await page.locator('#projects').click();
-    await page.locator('#import-zip:enabled').waitFor();
+    page.once('dialog',dialog=>dialog.accept());
     await page.locator('#zip-input').setInputFiles({name:archive.filename,mimeType:'application/zip',buffer:Buffer.from(archive.bytes)});
-    await page.locator('#projects-dialog').waitFor({state:'hidden'});
+    await page.waitForFunction(()=>document.querySelector('#tab-source').textContent==='dimensions.py');
     await waitForCache(page);
     return (await readCache(page)).active;
   }
-  assert.notEqual(await restore(),await restore());
+  const originalId=(await readCache(page)).active;
+  assert.equal(await restore(),originalId);
   await page.reload();
   await waitForCache(page);
   assert.equal(await page.locator('#tab-source').textContent(),'dimensions.py');
@@ -98,12 +98,12 @@ try {
   desktop = await electron.launch({...options,args:[...options.args,'--user-data-dir='+profile,path.join(outputs,'bracket.step')]});
   const screen = await desktop.firstWindow();
   async function rendered(name){
-    await screen.waitForFunction(expected=>document.querySelector('#model-name')?.textContent===expected,name,{timeout:90000});
-    assert.ok(await screen.locator('#viewport canvas').first().isVisible());
+    await screen.waitForFunction(expected=>document.querySelector('#model-state')?.textContent===expected,name,{timeout:90000});
+    assert.ok(await screen.locator('#cad-view canvas').first().isVisible());
   }
   async function open(filename){
     await desktop.evaluate(({dialog},filename)=>{dialog.showOpenDialog=async()=>({filePaths:[filename]});},filename);
-    await screen.locator('#open-cad').click();
+    await screen.locator('#open').click();
   }
   await rendered('bracket.step');
   await checkAssembly(screen);
@@ -113,8 +113,8 @@ try {
   const bad = path.join(profile,'invalid.html');
   await writeFile(bad,'<script>document.title="unexpected"</script>');
   await open(bad);
-  await screen.getByRole('status').filter({hasText:'Select an HTML viewer'}).waitFor();
-  assert.equal(await screen.locator('#model-name').textContent(),'model.py');
+  await screen.getByRole('status').filter({hasText:'Choose a viewer HTML'}).waitFor();
+  assert.equal(await screen.locator('#model-state').textContent(),'model.py');
   await screen.screenshot({path:path.join(outputs,'desktop-viewer.png')});
   assert.ok((await readFile(path.join(outputs,'bracket.stl'))).length>84);
   console.log('ZIP restore, pinned nested imports, failed build traceback, offline HTML, native STEP/STL and HTML reopen passed.');

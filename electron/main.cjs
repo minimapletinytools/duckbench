@@ -1,5 +1,5 @@
 const {app,BrowserWindow,ipcMain,dialog,shell}=require('electron');
-const {spawn}=require('node:child_process');
+const {spawn,execFile}=require('node:child_process');
 const fs=require('node:fs');
 const path=require('node:path');
 const root=path.resolve(__dirname,'..');
@@ -27,8 +27,40 @@ function watch(filename){
 }
 ipcMain.handle('runner:request',(_,request)=>{start();const id=++next;return new Promise((resolve,reject)=>{pending.set(id,{resolve,reject});child.stdin.write(JSON.stringify({...request,id})+'\n');});});
 ipcMain.handle('runner:cancel',()=>stop());
-ipcMain.handle('file:open',async()=>{const {canceled,filePaths}=await dialog.showOpenDialog(win,{filters:[{name:'Python',extensions:['py']}],properties:['openFile']});if(canceled)return null;const filename=filePaths[0];watch(filename);return {filename,code:fs.readFileSync(filename,'utf8')};});
-ipcMain.handle('file:save',async(_,data)=>{let filename=data.filename;if(!path.isAbsolute(filename)||filename!==watchedFile){const picked=await dialog.showSaveDialog(win,{defaultPath:path.basename(filename||'model.py'),filters:[{name:'Python',extensions:['py']}]});if(picked.canceled)return null;filename=picked.filePath;}fs.writeFileSync(filename,data.code);filename=fs.realpathSync(filename);watch(filename);return filename;});
+const modelExt=/\.(step|stp|stl|html)$/i;
+const fileTypes=[{name:'Duckbench files',extensions:['py','step','stp','stl','html','txt','json','csv','md','toml','svg']}];
+async function readDocument(filename){
+ if(!modelExt.test(filename)){watch(filename);return {filename,code:fs.readFileSync(filename,'utf8')};}
+ let model;
+ if(/\.html$/i.test(filename)){
+   const html=await fs.promises.readFile(filename,'utf8');
+   const data=html.match(/<script type="application\/json" id="duckbench-scene">([\s\S]*?)<\/script>/);
+   if(!data)throw new Error('Choose a viewer HTML exported by Duckbench.');
+   model=JSON.parse(data[1]);
+ }else{
+   const python=process.env.BUILD1234_PYTHON || (app.isPackaged ? path.join(process.resourcesPath,'python',process.platform==='win32'?'python.exe':'bin/python3') : path.join(root,'.venv',process.platform==='win32'?'Scripts/python.exe':'bin/python'));
+   const script=path.join(app.isPackaged?root.replace(/\.asar$/,'.asar.unpacked'):root,'python/viewer_import.py');
+   model=await new Promise((resolve,reject)=>execFile(python,['-I',script,filename],{maxBuffer:256*1024*1024},(err,out,log)=>{
+     if(err)return reject(new Error(log.trim().split('\n').pop()||err.message));
+     try{resolve(JSON.parse(out));}catch(error){reject(error);}
+   }));
+ }
+ return {filename,model};
+}
+ipcMain.handle('file:open',async()=>{
+ const pick=await dialog.showOpenDialog(win,{filters:fileTypes,properties:['openFile']});
+ return pick.filePaths[0]?readDocument(pick.filePaths[0]):null;
+});
+let queued=process.argv.slice(1).find(arg=>!arg.startsWith('-')&&modelExt.test(arg)),rendererReady=false;
+async function deliver(){
+ if(!rendererReady||!queued)return;
+ const file=queued;queued=null;
+ try{win.webContents.send('file:launch',await readDocument(path.resolve(file)));}
+ catch(error){win.webContents.send('file:launch',{error:error.message});}
+}
+app.on('open-file',(event,file)=>{event.preventDefault();queued=file;void deliver();});
+ipcMain.on('file:ready',()=>{rendererReady=true;void deliver();});
+ipcMain.handle('file:save',async(_,data)=>{let filename=data.filename;if(!path.isAbsolute(filename)||filename!==watchedFile){const picked=await dialog.showSaveDialog(win,{defaultPath:path.join(workspace||'',path.basename(filename||'model.py')),filters:[{name:'Python',extensions:['py']}]});if(picked.canceled)return null;filename=picked.filePath;}fs.writeFileSync(filename,data.code);filename=fs.realpathSync(filename);watch(filename);return filename;});
 function workspacePath(filename){
  if(!workspace)throw new Error('Open a folder first.');
  const resolved=fs.realpathSync(filename);
@@ -45,20 +77,41 @@ function explorerPath(filename){
 function entries(directory){
  return fs.readdirSync(directory,{withFileTypes:true}).filter(item=>explorerName(item.name)).filter(item=>item.isDirectory() || item.isFile()).map(item=>({name:item.name,path:path.join(directory,item.name),directory:item.isDirectory()})).sort((a,b)=>Number(b.directory)-Number(a.directory)||a.name.localeCompare(b.name));
 }
+function workspaceStateFile(){return path.join(app.getPath('userData'),'workbench-workspace.json');}
+function enterWorkspace(dir){
+ const root=fs.realpathSync(dir),children=entries(root);
+ if(workspace!==root){watcher?.close();watcher=null;watchedFile=null;workspace=root;}
+ return {root,name:path.basename(root),entries:children};
+}
 ipcMain.handle('workspace:open',async()=>{
- const picked=await dialog.showOpenDialog(win,{properties:['openDirectory']});
- if(picked.canceled)return null;
- workspace=fs.realpathSync(picked.filePaths[0]);
- return {root:workspace,name:path.basename(workspace),entries:entries(workspace)};
+ const picked=await dialog.showOpenDialog(win,{title:'Open workspace folder',properties:['openDirectory','createDirectory']});
+ if(!picked.filePaths[0])return null;
+ const folder=enterWorkspace(picked.filePaths[0]);
+ fs.writeFileSync(workspaceStateFile(),JSON.stringify({root:folder.root}));
+ return folder;
+});
+ipcMain.handle('workspace:restore',()=>{
+ try{return enterWorkspace(JSON.parse(fs.readFileSync(workspaceStateFile(),'utf8')).root);}
+ catch{return null;}
 });
 ipcMain.handle('workspace:list',(_,directory)=>entries(explorerPath(directory)));
-ipcMain.handle('workspace:read',(_,filename)=>{filename=workspacePath(filename);const code=fs.readFileSync(filename,'utf8');watch(filename);return {filename,code};});
+ipcMain.handle('workspace:read',(_,filename)=>readDocument(explorerPath(filename)));
 ipcMain.handle('workspace:agent-text', (_,filename) => {
  const target=explorerPath(filename);
  if(!/\.(py|json|txt|csv|svg|step|stp|md|toml|yaml|yml)$/i.test(target)) throw new Error('Select a project text file.');
  const stat=fs.statSync(target);
  if(!stat.isFile() || stat.size>4*1024*1024) throw new Error('Select a text file under 4 MiB.');
  return fs.readFileSync(target,'utf8');
+});
+ipcMain.handle('workspace:create-folder',(_,relative)=>{
+ if(typeof relative!=='string'||path.isAbsolute(relative)||relative.split(/[\\/]/).some(part=>!part||!explorerName(part)))throw new Error('Enter a workspace-relative folder name.');
+ let parent=workspace;
+ for(const part of relative.split(/[\\/]/)){
+   parent=path.join(explorerPath(parent),part);
+   if(!fs.existsSync(parent))fs.mkdirSync(parent);
+   else if(!fs.lstatSync(parent).isDirectory())throw new Error('A file already uses that name.');
+ }
+ return parent;
 });
 ipcMain.handle('workspace:create-file',(_,relative)=>{
  if(typeof relative!=='string'||path.isAbsolute(relative)||relative.split(/[\\/]/).some(part=>!part||!explorerName(part)||part==='..'))throw new Error('Enter a project-relative name.');

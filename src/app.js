@@ -13,7 +13,7 @@ import {createRuntime} from './runtime.js';
 import {createViewerFeedback} from './viewer-feedback.js';
 import {createFileActions} from './file-actions.js';
 import {openProjectStore,migrateExample} from './project-store.js';
-import {createProjectDialog} from './project-dialog.js';
+import {exportProject,restoreArchive} from './project-archive.js';
 
 import EXAMPLE from '../examples/duck.py?raw';
 
@@ -30,25 +30,23 @@ shell.register({id:'explorer',title:'Explorer',slot:'left',element:explorer});
 shell.register({id:'source',title:'Code',slot:'center',element:source});
 shell.register({id:'preview',title:'Preview',slot:'center',element:preview});
 shell.register({id:'console',title:'Output',slot:'bottom',element:consolePanel});
-shell.activate('preview');
+shell.activate('source');
 $('statusbar').innerHTML='<span id="runtime-status" role="status">Ready to run</span><span id="cache-status" role="status"></span><span class="panel-spacer"></span><span id="position">Python</span><span class="status-text">result → model</span>';
 const fileInput=document.createElement('input');fileInput.type='file';fileInput.accept='.py';fileInput.hidden=true;document.body.append(fileInput);
 const folderInput=document.createElement('input');folderInput.type='file';folderInput.webkitdirectory=true;folderInput.multiple=true;folderInput.hidden=true;document.body.append(folderInput);
 let filename='duck.py',initial=EXAMPLE;
 try{filename=localStorage.getItem('build1234.filename')||filename;initial=localStorage.getItem('build1234.code')??initial;}catch{}
 initial=migrateExample(filename,initial,EXAMPLE);
+let startupDraft;
+if(window.desktop){try{startupDraft=JSON.parse(localStorage.getItem('duckbench.desktopDraft'));}catch{}}
 let projectStore=null,projectRecord=null,startupCacheError=null;
 if(!window.desktop){
  try{
   projectStore=await openProjectStore();
-  const projects=await projectStore.list();
-  const active=await projectStore.active();
-  projectRecord=projects.find(project=>project.id===active)||projects[0];
-  if(!projectRecord){
-   filename=filename.replaceAll('\\','/');if(filename.startsWith('/')||filename.includes('..')||/^[A-Za-z]:/.test(filename))filename=filename.split('/').pop()||'duck.py';
-   const files={[filename]:initial};if(initial!==EXAMPLE&&!Object.hasOwn(files,'duck.py'))files['duck.py']=EXAMPLE;
-   projectRecord=await projectStore.create('My first project',files,filename);
-  }
+  filename=filename.replaceAll('\\','/');if(!validPath(filename))filename='duck.py';
+  const files={[filename]:initial};
+  if(initial!==EXAMPLE&&!Object.hasOwn(files,'duck.py'))files['duck.py']=EXAMPLE;
+  projectRecord=await projectStore.defaultProject(files,filename);
   filename=Object.hasOwn(projectRecord.files,projectRecord.activeFile)?projectRecord.activeFile:Object.keys(projectRecord.files)[0]||'untitled.py';
   initial=projectRecord.files[filename]??'';
   try{localStorage.removeItem('build1234.code');localStorage.removeItem('build1234.filename');}catch{}
@@ -58,14 +56,15 @@ if(!window.desktop){
 let cacheTimer,cacheQueue=Promise.resolve(),lastSavedCache='',cacheReady=false,projectChanging=false;
 let changing=false,runtime,busy=false,exporting=false,canExport=false,hasModel=false,generation=0,builtFilename=filename;
 let builtSnapshot=null,projectRevision=0,buildNeedsSetup=false,progressMessage='Building model…',deleting=false;
+let browserFolders=new Set(projectRecord?.folders||[]);
 let workspace=projectRecord?{name:projectRecord.name}:null,browserFiles={...projectRecord?.files},treeEntries=projectRecord?browserTree(projectRecord.files):[];
 let expandedFolders=new Set(projectRecord?.expanded||[]),runTarget=projectRecord?.runTarget||null;
-let lastScene=null,lastAttempt=null;
+let lastScene=null,lastAttempt=null,importedModel=false;
 const basename=path=>path?.split(/[\\/]/).pop()||'';
 const runPath=()=>runTarget||filename;
 function folderPrefs(){return 'duckbench.folder.'+workspace.root;}
 function saveFolderPrefs(){
- if(window.desktop&&workspace?.root){try{localStorage.setItem(folderPrefs(),JSON.stringify({runTarget,expanded:[...expandedFolders]}));}catch{}}
+ if(window.desktop&&workspace?.root){try{localStorage.setItem(folderPrefs(),JSON.stringify({activeFile:filename,runTarget,expanded:[...expandedFolders]}));}catch{}}
 }
 function setRunTarget(path){runTarget=path;saveFolderPrefs();renderTree();buttons();}
 function dirtyHelpers(target){
@@ -89,14 +88,13 @@ const fileActions=createFileActions({isDiskFile:path=>!!window.desktop&&/^(\/|[A
  if(window.desktop&&inWorkspace(entry.path))items.push({label:'Reveal in file manager',run:()=>window.desktop.revealFile(entry.path)});
  return items;
 }});
-const projectDialog=window.desktop?null:createProjectDialog({list:()=>projectStore.list(),current:()=>projectRecord?.id,openViewer:()=>openProjectViewer(),create:newProject,open:openProject,remove:deleteProject,snapshot:()=>({...projectRecord,...cachePayload()})});
 if(!window.desktop){
- const projects=document.createElement('button');projects.id='projects';projects.textContent='Projects';projects.onclick=()=>projectDialog.show();document.querySelector('.shell-brand').after(projects);
  $('open-folder').textContent='Import folder';$('open').textContent='Import file';$('save').textContent='Save to cache';
  const downloadButton=document.createElement('button');downloadButton.id='download-file';downloadButton.textContent='Download file';downloadButton.onclick=()=>download(editor.getValue(),filename.split('/').pop(),'text/x-python');$('save').after(downloadButton);
- const note=document.createElement('p');note.className='cache-notice';note.textContent='Saved in this browser, not to disk or the cloud. Use Projects → Export ZIP for a backup.';explorer.append(note);
+ const note=document.createElement('p');note.className='cache-notice';note.textContent='Saved in this browser, not to disk or the cloud. Use Export ZIP for a backup.';explorer.append(note);
 }
 $('storage-kind').textContent=window.desktop?'Files on disk':'Saved in this browser';
+$('open-folder').textContent=window.desktop?'Open workspace…':'Import folder';
 const fileCommands=document.createElement('div');
 fileCommands.className='explorer-commands';
 const named=document.createElement('button');named.textContent='New named file…';named.id='named-file';
@@ -109,6 +107,7 @@ named.onclick=async()=>{
     if(!workspace)throw new Error('Open a folder to create a named project file.');
     key=await window.desktop.createProjectFile(name);treeEntries=await window.desktop.listFiles(workspace.root);
   }else{
+    if([...browserFolders].some(dir=>dir===name||dir.startsWith(name+'/')))throw new Error('A folder already uses that name.');
     const paths=[...documents.keys(),...Object.keys(projectRecord?.modelFiles||{})];
     if(paths.some(p=>p===name||p.startsWith(name+'/')||name.startsWith(p+'/')))throw new Error('A file or folder already uses that name.');
     browserFiles[name]='';treeEntries=browserTree(browserFiles);
@@ -116,8 +115,41 @@ named.onclick=async()=>{
   load({filename:key,code:''});renderTree();editor.focus();
  }catch(reason){error(reason);}
 };
-fileCommands.append($('open-folder'),$('open'),named);
-if(!window.desktop)fileCommands.append($('download-file'));
+const newFolder=document.createElement('button');newFolder.textContent='New folder…';
+newFolder.onclick=async()=>{try{
+ const name=await requestFilename('parts','New folder name');if(!name)return;
+ if(!validPath(name)||name.split('/').some(p=>p.startsWith('.')||['constructor','__proto__','prototype'].includes(p)))throw new Error('Enter a relative folder name.');
+ if(window.desktop){
+   if(!workspace)throw new Error('Open a workspace first.');
+   await window.desktop.createFolder(name);treeEntries=await window.desktop.listFiles(workspace.root);
+ }else{
+   const allFiles=[...documents.keys(),...Object.keys(projectRecord?.modelFiles||{})];
+   if(allFiles.some(path=>path===name||name.startsWith(path+'/')||path.startsWith(name+'/'))||browserFolders.has(name))throw new Error('A file or folder already uses that name.');
+   browserFolders.add(name);treeEntries=browserTree(browserFiles);
+ }
+ renderTree();
+}catch(reason){error(reason);}};
+fileCommands.append($('open-folder'),$('open'),named,newFolder);
+if(!window.desktop){
+ fileCommands.append($('download-file'));
+ const button=(title,action)=>{const b=document.createElement('button');b.textContent=title;b.onclick=action;fileCommands.append(b);return b;};
+ button('Export ZIP',()=>exportProject({...projectRecord,name:'Default Project',...cachePayload()})).id='export-zip';
+ const zip=document.createElement('input');zip.id='zip-input';zip.type='file';zip.accept='.zip';zip.hidden=true;fileCommands.append(zip);
+ button('Restore ZIP…',()=>zip.click());
+ zip.onchange=async()=>{
+   const file=zip.files[0];zip.value='';if(!file)return;
+   try{
+     if(file.size>128*1024*1024)throw new Error('Project ZIP is too large.');
+     const restored=restoreArchive(new Uint8Array(await file.arrayBuffer()),file.name);
+     if(!confirm('Replace the contents of Default Project with '+file.name+'?'))return;
+     await changeProject(async()=>{await replaceBrowserFiles(restored,true);});
+   }catch(reason){cacheFailure(reason);}
+ };
+ // Only people with older, additional projects see recovery downloads.
+ for(const old of projectRecord?await projectStore.list().catch(()=>[]):[]){
+   if(old.id!==projectRecord?.id)button('Export '+old.name+' ZIP',()=>exportProject(old));
+ }
+}
 explorer.querySelector('.panel-toolbar').after(fileCommands);
 const project=agentProject({
  workspace:()=>workspace, documents, filename:()=>filename, desktop:window.desktop,
@@ -132,7 +164,7 @@ const refreshSearch=installExplorerSearch({
  listDirectory:path=>window.desktop.listFiles(path),
 });
 shell.onLayout(()=>{editor.layout();cad.layout();});
-function cachePayload(){return {files:projectFiles(),activeFile:filename,runTarget,expanded:[...expandedFolders]};}
+function cachePayload(){return {files:projectFiles(),folders:[...browserFolders],activeFile:filename,runTarget,expanded:[...expandedFolders]};}
 function cacheFailure(reason){$('cache-status').textContent='Not saved — browser cache error';$('cache-status').title=reason.message||String(reason);$('cache-status').classList.add('cache-error');error(reason);}
 function scheduleCache(){
  if(!cacheReady||projectChanging||window.desktop)return;
@@ -165,29 +197,20 @@ async function changeProject(action){
 }
 async function activateProject(record){
  if(busy)cancel();
- await projectStore.select(record.id);
- clearTimeout(cacheTimer);projectRecord=record;documents.clear();browserFiles={...record.files};
+
+ clearTimeout(cacheTimer);projectRecord=record;browserFolders=new Set(record.folders||[]);documents.clear();browserFiles={...record.files};
  for(const [name,code] of Object.entries(record.files))documents.set(name,{code,saved:code});
  filename=Object.hasOwn(record.files,record.activeFile)?record.activeFile:Object.keys(record.files)[0]||'untitled.py';
  if(!documents.has(filename))documents.set(filename,{code:'',saved:''});
  workspace={name:record.name};treeEntries=browserTree(browserFiles);expandedFolders=new Set(record.expanded||[]);runTarget=record.runTarget||null;lastScene=lastAttempt=null;
- hasModel=false;canExport=false;builtSnapshot=null;cad.clear();$('model-state').textContent='No model yet';$('model-state').title='';$('elapsed').textContent='';$('error-banner').hidden=true;
+ $('empty-state').hidden=false;hasModel=false;canExport=false;builtSnapshot=null;cad.clear();$('model-state').textContent='No model yet';$('model-state').title='';$('elapsed').textContent='';$('error-banner').hidden=true;
  changing=true;editor.setFilename(filename);editor.setValue(documents.get(filename).code);changing=false;
  renderTree();buttons();lastSavedCache=JSON.stringify(cachePayload());$('cache-status').textContent='Saved to browser cache';
 }
-async function newProject(name,files={'duck.py':EXAMPLE},settings={}){
- await changeProject(async()=>{const record=await projectStore.create(name,files,settings.activeFile||Object.keys(files).find(name=>name.endsWith('.py'))||Object.keys(files)[0],settings.runTarget||null,settings.modelFiles||{});await activateProject(record);});
-}
-async function openProject(id){
- if(id===projectRecord?.id)return;
- await changeProject(async()=>{const record=await projectStore.get(id);if(!record)throw new Error('This project no longer exists.');await activateProject(record);});
-}
-async function deleteProject(record){
- await changeProject(async()=>{
-  const current=record.id===projectRecord?.id;
-  await projectStore.remove(record.id,current?projectRecord.revision:record.revision);
-  if(current){const next=(await projectStore.list())[0]||await projectStore.create('My first project',{'duck.py':EXAMPLE},'duck.py');await activateProject(next);}
- });
+async function replaceBrowserFiles({files,modelFiles={},folders=[],activeFile,runTarget=null},replacing=false){
+ const record=await projectStore.save({...projectRecord,files,modelFiles,folders,activeFile,runTarget,expanded:[]});
+ if(replacing){agent.setContext(null);runtime?.cancel();}
+ await activateProject(record);shell.activate('source');
 }
 function projectFiles(){
  const files={...browserFiles};
@@ -196,9 +219,9 @@ function projectFiles(){
 }
 function snapshot(){return JSON.stringify([runPath(),projectRevision,window.desktop?[...documents].filter(([path,doc])=>path===runPath()||inWorkspace(path)&&doc.code!==doc.saved).map(([path,doc])=>[path,doc.code]):projectFiles()]);}
 function updatePreview(){
- const stale=hasModel&&(!canExport||snapshot()!==builtSnapshot);
- const origin=$('export-source');if(origin){origin.hidden=!hasModel;origin.textContent=hasModel?'Export: '+basename(builtFilename)+(stale?' (last successful build)':''):'';}
- feedback.update({busy,hasModel,needsSetup:buildNeedsSetup,stale:!canExport||snapshot()!==builtSnapshot,disabled:!runtime||exporting||deleting,message:progressMessage});}
+ const stale=hasModel&&!importedModel&&(!canExport||snapshot()!==builtSnapshot);
+ const origin=$('export-source');if(origin){origin.hidden=!hasModel;origin.textContent=hasModel?(importedModel?'Opened: ':'Export: ')+basename(builtFilename)+(stale?' (last successful build)':''):'';}
+ feedback.update({busy,hasModel,needsSetup:buildNeedsSetup,stale:!importedModel&&(!canExport||snapshot()!==builtSnapshot),disabled:!runtime||exporting||deleting,message:progressMessage});}
 function dirty(){const doc=documents.get(filename);return doc.untitled||doc.code!==doc.saved;}
 function updateFileRows(){
  for(const row of explorer.querySelectorAll('.file-row')){
@@ -215,7 +238,8 @@ function sync(){
  shell.setTitle('source',$('filename').textContent,filename);
  updateFileRows();
  $('run').textContent='▶ '+runLabel();
- if(window.desktop){try{localStorage.setItem('build1234.filename',filename);localStorage.setItem('build1234.code',editor.getValue());}catch{}}
+ if(window.desktop){try{localStorage.setItem('build1234.filename',filename);localStorage.setItem('build1234.code',editor.getValue());
+   const doc=documents.get(filename);if(doc.code!==doc.saved)localStorage.setItem('duckbench.desktopDraft',JSON.stringify({filename,...doc}));else localStorage.removeItem('duckbench.desktopDraft');}catch{}}
  else scheduleCache();
  updatePreview();
 }
@@ -227,7 +251,7 @@ function buttons(){
  $('step').disabled=$('stl').disabled=!canExport||busy||exporting||deleting;
  updatePreview();
 }
-function error(error){const message=error.message||String(error);$('error-message').textContent=message.split('\n').filter(Boolean).at(-1);$('error-banner').hidden=false;log(message);}
+function error(error){status('Error: '+(error.message||String(error)).split('\n').filter(Boolean).at(-1));const message=error.message||String(error);$('error-message').textContent=message.split('\n').filter(Boolean).at(-1);$('error-banner').hidden=false;log(message);}
 async function run({saveHelpers=false}={}){
  if(!runtime||busy||exporting||deleting)return;
  if(!saveHelpers&&dirtyHelpers(runPath()).length&&!window.confirm('Save changed project files to disk and run '+basename(runPath())+'?'))return;
@@ -253,13 +277,13 @@ async function run({saveHelpers=false}={}){
    if(token!==generation)return;
    runningSnapshot=snapshot();
    lastAttempt={id:token,target:project.relative(runningFile),status:'building'};
-   const result=await runtime.run({code,filename:runningFile,files,build_id:token,displayed_build:lastScene?.build??null});
+   const result=await runtime.run({code,filename:runningFile,files,...(!window.desktop?{folders:[...browserFolders]}:{}),build_id:token,displayed_build:lastScene?.build??null});
    if(token!==generation)return;
    status('Preparing 3D preview…');
    await new Promise(requestAnimationFrame);
    if(token!==generation)return;
    const retained=structuredClone(result.scene);
-   cad.render(result.scene);lastScene={version:1,build:token,name:basename(runningFile),scene:retained};
+   cad.render(result.scene);importedModel=false;lastScene={version:1,build:token,name:basename(runningFile),scene:retained};
    lastAttempt={id:token,target:project.relative(runningFile),status:'success',elapsed:result.elapsed};$('empty-state').hidden=true;hasModel=true;canExport=true;builtFilename=runningFile;
    builtSnapshot=runningSnapshot;
    $('model-state').textContent='result';$('model-state').title=runningFile;$('elapsed').textContent=result.elapsed.toFixed(2)+'s';status('Ready');log(`Built in ${result.elapsed.toFixed(2)}s`);
@@ -270,11 +294,21 @@ async function run({saveHelpers=false}={}){
 function cancel(){lastAttempt={id:generation,target:project.relative(runPath()),status:'cancelled'};++generation;runtime?.cancel();busy=false;canExport=false;buttons();status('Cancelled');}
 function load(data,{activate=true}={}){
  if(!data)return;
+ if(data.error)throw new Error(data.error);
+ if(data.model){
+   if(data.model.version!==1||!Array.isArray(data.model.scene?.parts))throw new Error('Unsupported Duckbench scene.');
+   if(busy)cancel();
+   shell.activate('preview');
+   const retained=structuredClone(data.model);
+   cad.render(data.model.scene);importedModel=true;lastScene=retained;hasModel=true;canExport=false;builtFilename=data.filename;
+   builtSnapshot=snapshot();$('empty-state').hidden=true;$('error-banner').hidden=true;$('model-state').textContent=data.model.name;
+   $('elapsed').textContent='';status('Opened '+basename(data.filename));buttons();return;
+ }
  filename=data.filename;
  const previous=documents.get(filename);
  if(!previous||previous.code===previous.saved)documents.set(filename,{...previous,code:data.code,saved:data.code});
  changing=true;editor.setFilename(filename);editor.setValue(documents.get(filename).code);changing=false;
- if(activate)shell.activate('source');sync();
+ if(activate)shell.activate('source');saveFolderPrefs();sync();
  if(!workspace)renderTree();
 }
 async function applyProjectEdit(proposal,isCurrent){
@@ -307,20 +341,22 @@ function showTraceback(message){
  return locations;
 }
 function inWorkspace(path){return !!workspace&&(window.desktop?path.replaceAll('\\','/').startsWith(workspace.root.replaceAll('\\','/')+'/'):Object.hasOwn(browserFiles,path));}
-async function openProjectViewer(file){
- await flushCache();
- const query=new URLSearchParams({project:projectRecord.id});
- if(file)query.set('file',file);
- location.href='./viewer/?'+query;
-}
 function fileRow(entry,depth){
  const row=document.createElement('button');row.className='file-row';row.dataset.path=entry.path;row.setAttribute('role','treeitem');row.style.paddingLeft=`${12+depth*14}px`;row.textContent=(entry.name.endsWith('.py')?'◇  ':'·  ')+entry.name;
- if(!window.desktop&&Object.hasOwn(projectRecord?.modelFiles||{},entry.path)){
-   row.title='Open '+entry.path+' in project viewer';
-   row.onclick=()=>openProjectViewer(entry.path).catch(error);
-   return row;
- }
- row.onclick=async()=>{try{const existing=documents.get(entry.path);if(window.desktop&&inWorkspace(entry.path))load(await window.desktop.readFile(entry.path));else if(existing)load({filename:entry.path,code:existing.code});else load({filename:entry.path,code:browserFiles[entry.path]??''});}catch(e){error(e);}};
+ row.onclick=async()=>{const scope=workspace;try{
+   if(window.desktop&&inWorkspace(entry.path)){const data=await window.desktop.readFile(entry.path);if(scope===workspace)load(data);}
+   else if(!window.desktop&&/\.(stl|stp|step|html)$/i.test(entry.path)){
+     const bytes=projectRecord?.modelFiles?.[entry.path]??new TextEncoder().encode(browserFiles[entry.path]||'');
+     let model;
+     if(/\.html$/i.test(entry.path)){
+       const payload=new TextDecoder().decode(bytes).match(/<script type="application\/json" id="duckbench-scene">([\s\S]*?)<\/script>/);
+       if(!payload){load({filename:entry.path,code:browserFiles[entry.path]});return;}
+       model=JSON.parse(payload[1]);
+     }else{status('Opening '+entry.name+'…');model=await runtime.importCad(entry.name,bytes);}
+     if(scope===workspace)load({filename:entry.path,model});
+   }else load({filename:entry.path,code:documents.get(entry.path)?.code??browserFiles[entry.path]??''});
+ }catch(e){error(e);}};
+ if(!window.desktop&&Object.hasOwn(projectRecord?.modelFiles||{},entry.path))return row;
  fileActions.bind(row,entry);
  return row;
 }
@@ -340,7 +376,7 @@ function renderTree(){
  const loose=[...documents.keys()].filter(path=>!inWorkspace(path));
  appendEntries($('file-tree'),loose.map(path=>({name:path.split(/[\\/]/).pop(),path})));
  if(workspace)appendEntries($('file-tree'),treeEntries);
- $('workspace-name').textContent=workspace?.name||'OPEN FILES';explorer.querySelector('.explorer-hint').hidden=!!workspace;sync();void refreshSearch();
+ $('workspace-name').textContent=workspace?.name||(window.desktop?'OPEN FILES':'Default Project');explorer.querySelector('.explorer-hint').hidden=!!workspace;sync();void refreshSearch();
 }
 async function removeFile(path){
  if(deleting)return;
@@ -362,20 +398,54 @@ async function removeFile(path){
 }
 function browserTree(files){
  const root=[];
- for(const path of [...Object.keys(files),...Object.keys(projectRecord?.modelFiles||{})].sort()){
+ for(const path of [...new Set([...Object.keys(files),...Object.keys(projectRecord?.modelFiles||{}),...browserFolders])].sort()){
   let level=root;const parts=path.split('/');let prefix='';
-  parts.forEach((name,i)=>{prefix+=(prefix?'/':'')+name;let entry=level.find(e=>e.name===name);if(!entry){entry={name,path:prefix,directory:i<parts.length-1,children:[]};level.push(entry);}level=entry.children;});
+  parts.forEach((name,i)=>{prefix+=(prefix?'/':'')+name;let entry=level.find(e=>e.name===name);if(!entry){entry={name,path:prefix,directory:i<parts.length-1||browserFolders.has(prefix),children:[]};level.push(entry);}level=entry.children;});
  }
  const sort=items=>{items.sort((a,b)=>Number(b.directory)-Number(a.directory)||a.name.localeCompare(b.name));items.forEach(i=>sort(i.children));};sort(root);return root;
 }
-$('open-folder').onclick=async()=>{try{if(window.desktop){const folder=await window.desktop.openFolder();if(folder){if(busy)cancel();workspace=folder;treeEntries=folder.entries;
-    let prefs={};try{prefs=JSON.parse(localStorage.getItem(folderPrefs())||'{}');}catch{}
-    runTarget=prefs.runTarget||null;expandedFolders=new Set(prefs.expanded||[]);
-    hasModel=canExport=false;lastScene=lastAttempt=builtSnapshot=null;cad.clear();$('model-state').textContent='No model yet';renderTree();buttons();}}else folderInput.click();}catch(e){error(e);}};
+async function enterFolder(folder,draft){
+ if(!folder)return;
+ if(workspace?.root===folder.root){treeEntries=folder.entries;renderTree();return;}
+ if(busy)cancel();
+ workspace=folder;treeEntries=folder.entries;documents.clear();projectRevision++;
+ let prefs={};try{prefs=JSON.parse(localStorage.getItem(folderPrefs())||'{}');}catch{}
+ runTarget=prefs.runTarget||null;expandedFolders=new Set(prefs.expanded||[]);
+ let data;
+ if(draft&&prefs.activeFile===draft.filename&&inWorkspace(draft.filename))documents.set(draft.filename,{code:draft.code,saved:draft.saved});
+ if(prefs.activeFile&&inWorkspace(prefs.activeFile)&&! /\.(stp|step|stl|html)$/i.test(prefs.activeFile)){
+   try{data=await window.desktop.readFile(prefs.activeFile);}catch{}
+ }
+ const first=treeEntries.find(item=>!item.directory&&item.name==='model.py')||treeEntries.find(item=>!item.directory&&item.name.endsWith('.py'));
+ let readError;
+ if(!data&&first){try{data=await window.desktop.readFile(first.path);}catch(reason){readError=reason;}}
+ data??={filename:'untitled.py',code:''};
+ hasModel=canExport=false;lastScene=lastAttempt=builtSnapshot=null;cad.clear();$('empty-state').hidden=false;
+ $('model-state').textContent='No model yet';$('elapsed').textContent='';$('error-banner').hidden=true;
+ load(data);renderTree();buttons();if(readError)error(readError);
+}
+$('open-folder').onclick=async()=>{try{
+ if(!window.desktop){folderInput.click();return;}
+ if([...documents.values()].some(doc=>doc.code!==doc.saved)&&!confirm('Discard unsaved edits if you open another workspace?'))return;
+ const folder=await window.desktop.openFolder();if(folder)await enterFolder(folder);
+}catch(e){error(e);}};
 folderInput.onchange=async()=>{try{
- const imported={},modelFiles={};for(const file of folderInput.files){if(file.webkitRelativePath.split('/').some(part=>part.startsWith('.')||part==='node_modules'))continue;if(/\.stl$/i.test(file.name))modelFiles[file.webkitRelativePath]=new Uint8Array(await file.arrayBuffer());else if(/\.(py|json|txt|csv|svg|step|stp|html)$/i.test(file.name))imported[file.webkitRelativePath]=await file.text();}
- const name=folderInput.files[0]?.webkitRelativePath.split('/')[0]||'Imported project';
- if(Object.keys(imported).length||Object.keys(modelFiles).length)await newProject(name,imported,{modelFiles});
+ const imported={},modelFiles={};
+ for(const file of folderInput.files){
+   const name=file.webkitRelativePath;
+   if(!validPath(name)||name.split('/').some(part=>part.startsWith('.')||['node_modules','constructor','prototype','__proto__'].includes(part)))continue;
+   if(/\.stl$/i.test(name))modelFiles[name]=new Uint8Array(await file.arrayBuffer());
+   else if(/\.(py|json|txt|csv|svg|step|stp|html|md|toml)$/i.test(name))imported[name]=await file.text();
+ }
+ const names=[...Object.keys(imported),...Object.keys(modelFiles)];if(!names.length)return;
+ await changeProject(async()=>{
+   const current=projectFiles(),existing=new Set([...Object.keys(current),...Object.keys(projectRecord.modelFiles||{})]);
+   for(const name of names){
+     if([...browserFolders].some(dir=>dir===name||dir.startsWith(name+'/'))||existing.has(name)||[...existing].some(p=>p.startsWith(name+'/')||name.startsWith(p+'/')))throw new Error('A file or folder already exists at '+name);
+   }
+   await replaceBrowserFiles({files:{...current,...imported},folders:[...browserFolders],modelFiles:{...projectRecord.modelFiles,...modelFiles},
+     activeFile:Object.keys(imported).find(p=>p.endsWith('.py'))||filename,runTarget});
+ });
  }catch(reason){cacheFailure(reason);}finally{folderInput.value='';}
 };
 $('open').onclick=async()=>{try{if(window.desktop)load(await window.desktop.open());else fileInput.click();}catch(e){error(e);}};
@@ -384,7 +454,7 @@ function download(data,name,type){const url=URL.createObjectURL(new Blob([data],
 async function save(){try{
  const code=editor.getValue();if(window.desktop){const target=await window.desktop.save({filename,code});if(!target)return;documents.delete(filename);filename=target;documents.set(filename,{code,saved:code});editor.setFilename(filename);if(workspace)treeEntries=await window.desktop.listFiles(workspace.root);}
  else {await flushCache();}
- sync();renderTree();status(window.desktop?'Saved':'Saved to browser cache');
+ saveFolderPrefs();sync();renderTree();status(window.desktop?'Saved':'Saved to browser cache');
 }catch(e){if(window.desktop)error(e);else cacheFailure(e);}}
 $('save').onclick=save;$('run').onclick=()=>run({saveHelpers:true});$('empty-run').onclick=run;$('cancel').onclick=cancel;
 $('new-file').onclick=()=>{
@@ -404,7 +474,7 @@ $('export-viewer').onclick=async()=>{
 bindTreeKeyboard(explorer);
 $('dismiss-error').onclick=()=>{$('error-banner').hidden=true;};$('clear-log').onclick=()=>{$('logs').textContent='';};
 for(const format of ['step','stl'])$(format).onclick=async()=>{if(!canExport||busy||exporting)return;exporting=true;buttons();try{download(await runtime.exportModel(format,lastScene.build),builtFilename.split(/[\\/]/).pop().replace(/\.py$/i,'')+'.'+format,'application/octet-stream');}catch(e){error(e);}finally{exporting=false;buttons();}};
-document.addEventListener('keydown',event=>{if(projectChanging||document.querySelector('dialog[open]'))return;if(agent.element.contains(event.target))return;if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='p'){event.preventDefault();if($('left-slot').hidden)shell.toggle('left');$('find-file').focus();$('find-file').select();return;}if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();run();}if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();save();}},true);
+document.addEventListener('keydown',event=>{if(projectChanging||document.querySelector('dialog[open]'))return;if(agent.element.contains(event.target))return;if(window.desktop&&(event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='o'){event.preventDefault();$('open').click();return;}if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='p'){event.preventDefault();if($('left-slot').hidden)shell.toggle('left');$('find-file').focus();$('find-file').select();return;}if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();run();}if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();save();}},true);
 window.desktop?.onFileChanged(data=>{
  const doc=documents.get(data.filename);if(!doc)return;
  if(doc.saved===data.code)return;
@@ -422,3 +492,9 @@ cacheReady=true;lastSavedCache=projectRecord?JSON.stringify(cachePayload()):'';
 if(!window.desktop){$('cache-status').textContent=projectRecord?'Saved to browser cache':'Cache unavailable';if(startupCacheError)cacheFailure(startupCacheError);}
 
 try{runtime=await createRuntime({onLog:log,onStatus:status});buttons();log(window.desktop?'Native Python ready to run.':'Browser Python loads on first run.');}catch(e){error(e);}
+
+if(window.desktop){
+ try{await enterFolder(await window.desktop.restoreWorkspace(),startupDraft);}catch(reason){error(reason);}
+ window.desktop.onLaunch(data=>{try{load(data);}catch(reason){error(reason);}});
+ window.desktop.ready();
+}

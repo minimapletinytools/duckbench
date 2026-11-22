@@ -1,7 +1,10 @@
 const {contextBridge,ipcRenderer}=require('electron');
 const subscribe=(channel,callback)=>{const fn=(_,value)=>callback(value);ipcRenderer.on(channel,fn);return()=>ipcRenderer.removeListener(channel,fn);};
 contextBridge.exposeInMainWorld('desktop',{
+ restoreWorkspace:()=>ipcRenderer.invoke('workspace:restore'),
+ ready:()=>ipcRenderer.send('file:ready'),onLaunch:callback=>subscribe('file:launch',callback),
  viewerAssets:()=>ipcRenderer.invoke('viewer:assets'),
+ createFolder:name=>ipcRenderer.invoke('workspace:create-folder',name),
  createProjectFile:name=>ipcRenderer.invoke('workspace:create-file',name),
  revealFile:path=>ipcRenderer.invoke('workspace:reveal',path),
  saveProjectBuffer:data=>ipcRenderer.invoke('workspace:save-buffer',data),

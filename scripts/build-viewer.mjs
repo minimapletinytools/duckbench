@@ -15,5 +15,5 @@ const notices = Object.fromEntries(await Promise.all(licenseFiles.map(async file
 const assets = {css,script,policy,notices};
 await mkdir('public/standalone',{recursive:true});
 await writeFile('public/standalone/renderer.json',JSON.stringify(assets));
-// Existing bookmarks to the empty viewer open the project library. Exported scenes stay self-contained.
-await writeFile('public/standalone/viewer.html','<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=../viewer/"><title>Duckbench Viewer</title><a href="../viewer/">Open Duckbench Viewer</a>');
+// Existing bookmarks to the empty viewer open the workbench. Exported scenes stay self-contained.
+await writeFile('public/standalone/viewer.html','<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=../"><title>Duckbench Viewer</title><a href="../">Open Duckbench</a>');

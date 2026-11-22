@@ -29,17 +29,13 @@ For the browser:
 npm run dev
 ```
 
-`npm run build` creates `dist/`, which can be served by any static HTTP(S) host, including under a subdirectory. `npm run preview` serves the production build locally. The browser loads Pyodide and CAD packages over the network on first run; it does not submit modeling code to a CAD server. Browser projects are saved in IndexedDB. **Projects** creates, opens, deletes, and exports multiple named project folders; the last project and active file are restored on reload. Edits, new files, imports, and deletions are automatically saved, with **Save to cache** available for an immediate commit. **Download file** downloads the current source, and **Export ZIP** backs up a whole project. **Projects → Import project ZIP** restores the files into a new project. Duckbench archives also restore the active file and pinned run target. Older source-only ZIPs are supported. **Import folder** creates a separate cached project (Python and common text/CAD data files), preserving paths for sibling imports. Browser cache is local to this origin and browser profile, not disk files or cloud storage; clearing site data removes it. Desktop Open Folder browses files directly from disk.
+`npm run build` creates `dist/`, which can be served by any static HTTP(S) host, including under a subdirectory. `npm run preview` serves the production build locally. The browser loads Pyodide and CAD packages over the network on first run; it does not submit modeling code to a CAD server. The browser opens **Default Project** in Monaco. Its files, folders, selected file, and run target autosave in IndexedDB. **Import folder** adds a directory to this project. **Export ZIP** backs it up, and **Restore ZIP…** replaces its contents after confirmation. Upgrading keeps the previous active project’s ID and files. Additional older projects remain available as ZIP downloads in the explorer. Browser storage is local to the site and browser profile.
 
 `npm run package` stages the current platform's managed Python interpreter and its dependencies, then builds an Electron application in `release/app/`. Package on each target OS/architecture. A macOS arm64 application is the currently tested target. Local builds are unsigned (`build.mac.identity` is null). Configure signing explicitly for distribution. Distribution installers, notarization, auto-update, and other-platform packaging are follow-up work. `BUILD1234_PYTHON` can override the desktop Python executable.
 
-## Viewer projects
+## Standalone viewer
 
-Open **Projects** in the Duckbench title bar, then **Open project viewer**, or go directly to the [web viewer](https://minimapletinytools.github.io/duckbench/viewer/). The web viewer and workbench share the same named projects in this browser. In **Duckbench Viewer** on desktop, **Projects** lists recent folders. **Create project** creates a new folder in the location you choose. **Open folder** opens an existing workspace in place.
-
-Select a file in the project tree to inspect its source or geometry. For Python models, select the entry script and click **Build Python preview**. Desktop asks before running local Python, which has access to your files. The browser downloads its Python/CAD runtime on first use. **Add files**, **Export ZIP**, and **Import project ZIP** work on both platforms, including binary STL files and nested paths. Folder imports and ZIP exports include the supported files shown in the project tree. Import creates a separate project. The last open project is remembered across launches. Desktop **Forget** removes a recent-folder entry.
-
-To view a single exported model, choose **Open model…** (⌘O / Ctrl+O). It opens STEP, STP, STL and interactive HTML exported by Duckbench. STEP assemblies retain the part names available in the source. STL supplies a triangle mesh. The packaged viewer includes its CAD importer and works offline without signing in.
+Duckbench Viewer opens the same Monaco editor, file explorer, Agent, Output, and CAD preview as the browser. Choose **Open workspace…** to work directly in a folder on disk. The app remembers the workspace and selected source file across launches. Use **New folder…** to organize files or **Open file** to inspect a STEP, STL or exported Duckbench HTML model. Local modeling and CAD import use the bundled Python runtime.
 
 Run the viewer from the checkout or build a separate desktop application for the current platform.
 
@@ -127,7 +123,7 @@ TEST_URL=http://127.0.0.1:4173 npm run test:browser
 TEST_URL=http://127.0.0.1:4173 node tests/workbench.mjs
 TEST_URL=http://127.0.0.1:4173 node tests/projects.mjs
 TEST_URL=http://127.0.0.1:4173 node tests/viewer-workflow.mjs
-TEST_URL=http://127.0.0.1:4173 node tests/viewer-projects.mjs
+TEST_URL=http://127.0.0.1:4173 node tests/shared-workspace.mjs
 ```
 
 The web agent test uses a local authenticated Cloudflare Worker fixture, a simulated OAuth provider and a model stub. It covers PKCE callback handling, real WebSocket and MCP requests, edit review and revocation. Set `KIGUMI_BACKEND_DIR` to use a different backend checkout.
@@ -158,4 +154,4 @@ The **?** button beside the Duckbench title opens an offline page with upstream 
 
 The icon is a screenshot of the original **Puddle the duck** model in `examples/duck.py`, rendered with three-cad-viewer without CAD overlays. `public/icons/duck.png` is the transparent 1024px capture; the smaller PNG, ICO, and ICNS files are derived from it. On macOS, run `npm run icons` to recapture it (requires installed Chrome, uv, and the built-in `sips` / `iconutil` tools). No generated illustration or third-party image is used.
 
-`src/project-store.js` owns atomic project records and the active-project ID. Autosave reports success only after an IndexedDB transaction commits, and revision checks prevent stale tabs from overwriting newer edits. Storage failures keep the current editor contents available for download or ZIP export. `src/project-dialog.js` provides the browser project-folder list and backup exports.
+`src/project-store.js` owns atomic project records and the active-project ID. Autosave reports success only after an IndexedDB transaction commits, and revision checks prevent stale tabs from overwriting newer edits. Storage failures keep the current editor contents available for download or ZIP export. Each project keeps a stable ID independent of its displayed name.

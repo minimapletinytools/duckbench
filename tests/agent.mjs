@@ -68,11 +68,8 @@ async function exercise(page, isDesktop) {
       await page.getByRole('button', {name:'Send', exact:true}).click();
       await page.getByText('The file contains a comment.', {exact:true}).waitFor();
       assert.equal(requests, 2);
-      await page.locator('#projects').click();
-      await page.locator('#project-name').fill('Second project');
-      await page.getByRole('button', {name:'New project', exact:true}).click();
-      await page.getByText('Disconnected', {exact:true}).waitFor();
-      await page.waitForFunction(() => !document.querySelector('.agent-thread article'));
+      await page.getByRole('button',{name:'Disconnect MCP'}).click();
+      await page.getByText('Disconnected',{exact:true}).waitFor();
       let status;
       for (let n = 0; n < 30; n++) {
         status = (await fetch(url, {headers})).status;
@@ -80,8 +77,6 @@ async function exercise(page, isDesktop) {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
       assert.equal(status, 410);
-      await page.locator('#projects').click();
-      await page.locator('.project-row').filter({hasText:'My first project'}).getByRole('button',{name:'Open',exact:true}).click();
       await page.getByText('The file contains a comment.', {exact:true}).waitFor();
       await page.getByLabel('Message to agent').fill('Continue checking the model');
       await page.getByRole('button',{name:'New chat',exact:true}).click();
@@ -109,6 +104,7 @@ try {
     await desktop.evaluate(({dialog}, folder) => {
       dialog.showOpenDialog = async () => ({canceled:false, filePaths:[folder]});
     }, projectPath);
+    page.once('dialog',d=>d.accept());
     await page.locator('#open-folder').click();
     await page.getByRole('button', {name:'Connect MCP', exact:true}).click();
     const setup = await setupFromPanel(page);
@@ -210,7 +206,7 @@ try {
     await page.locator('#toggle-agent').click();
     await exercise(page, false);
     assert.deepEqual(errors, []);
-    console.log('Browser MCP, project switch, chat tool calls and explorer search passed.');
+    console.log('Browser MCP disconnect, chat history, tool calls and explorer search passed.');
   }
 } finally {
   await browser?.close();

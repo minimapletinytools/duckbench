@@ -17,10 +17,11 @@ export function bindTreeKeyboard(root) {
   });
 }
 
-export function requestFilename(initial) {
+export function requestFilename(initial,label="New file name") {
   const dialog=document.createElement('dialog');
   dialog.className='file-dialog';
   dialog.innerHTML='<form method="dialog"><label>New file name <input required autocomplete="off"></label><button value="create" class="primary">Create</button><button value="cancel" formnovalidate>Cancel</button></form>';
+  dialog.querySelector('label').firstChild.textContent=label+' ';
   const input=dialog.querySelector('input');input.value=initial;
   document.body.append(dialog);dialog.showModal();input.select();
   return new Promise(resolve=>dialog.addEventListener('close',()=>{

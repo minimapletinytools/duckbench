@@ -47,6 +47,8 @@ self.onmessage=({data})=>{queue=queue.then(async()=>{
       const nextFiles=new Set(Object.keys(data.params.files||{}).map(name=>'/project/'+relative(name)));
       for(const filename of importedFiles)if(!nextFiles.has(filename)&&py.FS.analyzePath(filename).exists)py.FS.unlink(filename);
       importedFiles=nextFiles;
+      for(const folder of data.params.folders||[])py.FS.mkdirTree('/project/'+relative(folder));
+      delete data.params.folders;
       for(const [name,content] of Object.entries(data.params.files||{})) {
         const filename='/project/'+relative(name);
         py.FS.mkdirTree(filename.slice(0,filename.lastIndexOf('/')));

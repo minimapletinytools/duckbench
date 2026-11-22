@@ -50,7 +50,7 @@ try{
  await page.getByRole('treeitem',{name:/model.py/}).waitFor({state:'detached'});
  assert.equal(await fs.readFile(path.join(temporary,'trashed.py'),'utf8'),code+'# Changed on disk\n');
  assert.equal(await fs.readFile(outside,'utf8'),code);
- assert.equal(await page.locator('#filename').textContent(),'duck.py');
+ assert.equal(await page.locator('#filename').textContent(),'untitled.py');
  await page.locator('#tab-preview').click();
  assert.ok(await page.locator('#refresh-preview').isVisible());
  const created=path.join(workspace,'new.py');

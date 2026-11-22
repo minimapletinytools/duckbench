@@ -21,28 +21,29 @@ export async function openProjectStore() {
       catch (error) { failure = error; tx.abort(); }
     });
   }
-  const get = id => transaction(['projects'], 'readonly', (tx, done) => {
-    tx.objectStore('projects').get(id).onsuccess = event => done(event.target.result);
-  });
   return {
-    get,
     list: () => transaction(['projects'], 'readonly', (tx, done) => {
-      tx.objectStore('projects').getAll().onsuccess = event => done(event.target.result.sort((a,b) => b.updated-a.updated));
+      tx.objectStore('projects').getAll().onsuccess = event => done(event.target.result);
     }),
-    active: () => transaction(['meta'], 'readonly', (tx, done) => {
-      tx.objectStore('meta').get('active').onsuccess = event => done(event.target.result);
+    // Claim the previous active project once. The transaction also serializes first visits in two tabs.
+    defaultProject: (files, activeFile) => transaction(['projects','meta'],'readwrite',(tx,done)=>{
+      const projects=tx.objectStore('projects'),meta=tx.objectStore('meta');
+      const preferred=meta.get('defaultProject'),active=meta.get('active');
+      active.onsuccess=()=>{
+        const id=preferred.result || active.result;
+        function claim(previous){
+          const now=Date.now();
+          const record=previous || {id:crypto.randomUUID(),files,activeFile,created:now,updated:now,revision:0};
+          if(record.name!=='Default Project'){
+            record.name='Default Project';record.revision++;projects.put(record);
+          }
+          meta.put(record.id,'defaultProject');meta.put(record.id,'active');done(record);
+        }
+        function fallback(){projects.openCursor().onsuccess=e=>claim(e.target.result?.value);}
+        if(id)projects.get(id).onsuccess=e=>e.target.result?claim(e.target.result):fallback();
+        else fallback();
+      };
     }),
-    select: id => transaction(['meta'], 'readwrite', tx => tx.objectStore('meta').put(id, 'active')),
-    create: (name, files, activeFile = Object.keys(files)[0], runTarget = null, modelFiles = {}) => {
-      const now = Date.now();
-      const record = {id: crypto.randomUUID(), name: name.trim().slice(0,80) || 'Untitled project', files, modelFiles,
-        activeFile, runTarget, expanded: [], created: now, updated: now, revision: 1};
-      return transaction(['projects', 'meta'], 'readwrite', (tx, done) => {
-        tx.objectStore('projects').add(record);
-        tx.objectStore('meta').put(record.id, 'active');
-        done(record);
-      });
-    },
     save: record => transaction(['projects'], 'readwrite', (tx, done, fail) => {
       const store = tx.objectStore('projects');
       store.get(record.id).onsuccess = event => {
@@ -53,16 +54,6 @@ export async function openProjectStore() {
         }
         const updated = {...record, revision: record.revision+1, updated: Date.now()};
         try { store.put(updated); done(updated); } catch (error) { fail(error); }
-      };
-    }),
-    remove: (id, revision) => transaction(['projects', 'meta'], 'readwrite', (tx, done, fail) => {
-      const store = tx.objectStore('projects');
-      store.get(id).onsuccess = event => {
-        if (event.target.result?.revision !== revision) { fail(new Error('This project changed in another tab. Reopen the project list before deleting it.')); return; }
-        store.delete(id);
-        const meta = tx.objectStore('meta');
-        meta.get('active').onsuccess = event => { if (event.target.result === id) meta.delete('active'); };
-        done();
       };
     }),
     close: () => db.close(),
