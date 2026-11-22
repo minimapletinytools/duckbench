@@ -24,7 +24,7 @@ const disposeAbout=installAbout();
 $('toolbar').innerHTML='<button id="open-folder">Open folder</button><button id="open">Open file</button><button id="save">Save</button><span class="toolbar-divider"></span><button id="run" class="primary" disabled>▶ Run</button><button id="cancel" disabled>■ Stop</button><button id="step" disabled>STEP ↓</button><button id="stl" disabled>STL ↓</button><button id="export-viewer" disabled title="Export an offline interactive viewer">Viewer HTML ↓</button>';
 const explorer=element('explorer-panel','<div class="panel-toolbar"><strong>Explorer</strong><button id="new-file" class="new-file-button" title="Create a blank Python file"><span aria-hidden="true">＋</span> New file</button></div><div id="workspace-name" class="workspace-name">OPEN FILES</div><small id="storage-kind" class="storage-kind"></small><input id="find-file" class="explorer-search" type="search" aria-label="Find a file" placeholder="Find a file…" /><div id="file-tree" class="explorer-tree" role="tree"></div><div class="explorer-hint">Open a folder to browse your project.</div>');
 const source=element('editor-panel','<div class="panel-toolbar"><span id="filename">duck.py</span><span id="dirty" hidden>●</span><span class="panel-spacer"></span><span>Python</span></div><div id="editor" class="monaco-host"></div>');
-const preview=element('viewer-panel','<div class="panel-toolbar"><span id="model-state">No model yet</span><span class="panel-spacer"></span><span id="export-source" hidden></span><span id="elapsed"></span></div><div class="viewport-wrap"><div id="cad-view"></div><div id="empty-state"><strong>build123d</strong><p>Assign your model to <code>result</code>, then run.</p><button id="empty-run" class="primary">▶ Run model</button></div></div><div id="error-banner" role="alert" hidden><span id="error-message"></span><button id="dismiss-error" aria-label="Dismiss error">×</button></div>');
+const preview=element('viewer-panel','<div class="panel-toolbar"><span id="model-state">No model yet</span><span class="panel-spacer"></span><span id="export-source" hidden></span><span id="elapsed"></span></div><div class="viewport-wrap"><div id="cad-view"></div><div id="empty-state"><h2>Please run your model to preview</h2><button id="empty-run" class="primary" disabled>▶ Run</button></div></div><div id="error-banner" role="alert" hidden><span id="error-message"></span><button id="dismiss-error" aria-label="Dismiss error">×</button></div>');
 const consolePanel=element('console-panel','<div class="panel-toolbar"><strong>OUTPUT</strong><span class="panel-spacer"></span><button id="clear-log">Clear</button></div><pre id="logs"></pre>');
 shell.register({id:'explorer',title:'Explorer',slot:'left',element:explorer});
 shell.register({id:'source',title:'Code',slot:'center',element:source});
@@ -237,7 +237,8 @@ function sync(){
  $('filename').textContent=filename.split(/[\\/]/).pop();$('dirty').hidden=!dirty();
  shell.setTitle('source',$('filename').textContent,filename);
  updateFileRows();
- $('run').textContent='▶ '+runLabel();
+ const label='▶ '+runLabel();
+ $('run').textContent=label;$('empty-run').textContent=label;
  if(window.desktop){try{localStorage.setItem('build1234.filename',filename);localStorage.setItem('build1234.code',editor.getValue());
    const doc=documents.get(filename);if(doc.code!==doc.saved)localStorage.setItem('duckbench.desktopDraft',JSON.stringify({filename,...doc}));else localStorage.removeItem('duckbench.desktopDraft');}catch{}}
  else scheduleCache();
@@ -456,7 +457,7 @@ async function save(){try{
  else {await flushCache();}
  saveFolderPrefs();sync();renderTree();status(window.desktop?'Saved':'Saved to browser cache');
 }catch(e){if(window.desktop)error(e);else cacheFailure(e);}}
-$('save').onclick=save;$('run').onclick=()=>run({saveHelpers:true});$('empty-run').onclick=run;$('cancel').onclick=cancel;
+$('save').onclick=save;$('run').onclick=$('empty-run').onclick=()=>run({saveHelpers:true});$('cancel').onclick=cancel;
 $('new-file').onclick=()=>{
  const names=new Set([...documents.keys(),...Object.keys(browserFiles)].map(path=>path.split(/[\\/]/).pop()));
  let name='untitled.py',number=2;
