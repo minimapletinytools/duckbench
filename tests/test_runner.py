@@ -10,6 +10,25 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'python'))
 import runner
 
 class RunnerTests(unittest.TestCase):
+    def test_starter_duck_step_round_trip(self):
+        import runpy
+        from build123d import export_step, import_step
+
+        example = Path(__file__).resolve().parents[1] / 'examples' / 'duck.py'
+        duck = runpy.run_path(str(example))['result']
+        with tempfile.TemporaryDirectory() as directory:
+            step = Path(directory) / 'duck.step'
+            export_step(duck, step)
+            restored = import_step(step)
+        source = {part.label.replace(' ', '_'): part for part in duck.children}
+        self.assertEqual(set(source), {part.label for part in restored.children})
+        for part in restored.children:
+            with self.subTest(part=part.label):
+                self.assertTrue(part.is_valid)
+                self.assertGreater(part.volume, 0)
+                self.assertAlmostEqual(part.volume, source[part.label].volume,
+                                       delta=source[part.label].volume * 0.001)
+
     def test_contract_and_last_good_export(self):
         scene=runner.run_model('from build123d import *\nresult = Box(4, 5, 6)')['scene']
         self.assertTrue(scene['parts'])

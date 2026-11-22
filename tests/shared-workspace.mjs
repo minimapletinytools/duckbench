@@ -20,14 +20,16 @@ async function launch(){
 try{
   const context=await browser.newContext(),page=await context.newPage();
   await page.goto(new URL('icons/duck-64.png',base).href);
-  await page.evaluate(async()=>{
+  const oldDuck=await readFile(new URL('../src/legacy/duck-v1.py',import.meta.url),'utf8');
+  const newDuck=await readFile(new URL('../examples/duck.py',import.meta.url),'utf8');
+  await page.evaluate(async oldDuck=>{
     const db=await new Promise(resolve=>{const r=indexedDB.open('duckbench-projects',1);r.onupgradeneeded=()=>{r.result.createObjectStore('projects',{keyPath:'id'});r.result.createObjectStore('meta');};r.onsuccess=()=>resolve(r.result);});
     const tx=db.transaction(['projects','meta'],'readwrite'),p=tx.objectStore('projects');
     for(const [id,name] of [['one','Earlier'],['two','Active bracket']]){
-      p.put({id,name,files:{'parts/main.py':'# '+name},modelFiles:{'mesh.stl':new Uint8Array([1,2,3])},activeFile:'parts/main.py',runTarget:'parts/main.py',expanded:['parts'],revision:7,created:1,updated:2});
+      p.put({id,name,files:{'parts/main.py':'# '+name,'duck.py':oldDuck,'example.py':oldDuck+'# my changes'},modelFiles:{'mesh.stl':new Uint8Array([1,2,3])},activeFile:'parts/main.py',runTarget:'parts/main.py',expanded:['parts'],revision:7,created:1,updated:2});
     }
     tx.objectStore('meta').put('two','active');await new Promise(resolve=>tx.oncomplete=resolve);db.close();
-  });
+  },oldDuck);
   const second=await context.newPage();
   await Promise.all([page.goto(new URL('viewer/',base).href),second.goto(base.href)]);
   for(const p of [page,second]){
@@ -36,7 +38,11 @@ try{
     assert.equal(await p.locator('#tab-source').textContent(),'main.py');
   }
   const cache=await readCache(page);assert.equal(cache.active,'two');assert.equal(cache.projects.length,2);
-  assert.equal(cache.projects.find(p=>p.id==='two').revision,8);
+  const active=cache.projects.find(p=>p.id==='two');
+  assert.equal(active.revision,8);
+  assert.equal(active.files['duck.py'],newDuck);
+  assert.equal(active.files['example.py'],oldDuck+'# my changes');
+  assert.equal(cache.projects.find(p=>p.id==='one').files['duck.py'],oldDuck);
   const zip=page.waitForEvent('download');await page.getByRole('button',{name:'Export Earlier ZIP'}).click();
   const legacy=restoreArchive(await readFile(await(await zip).path()),'earlier.zip');
   assert.equal(legacy.files['parts/main.py'],'# Earlier');assert.deepEqual([...legacy.modelFiles['mesh.stl']],[1,2,3]);

@@ -47,7 +47,7 @@ if(!window.desktop){
   filename=filename.replaceAll('\\','/');if(!validPath(filename))filename='duck.py';
   const files={[filename]:initial};
   if(initial!==EXAMPLE&&!Object.hasOwn(files,'duck.py'))files['duck.py']=EXAMPLE;
-  projectRecord=await projectStore.defaultProject(files,filename);
+  projectRecord=await projectStore.defaultProject(files,filename,EXAMPLE);
   filename=Object.hasOwn(projectRecord.files,projectRecord.activeFile)?projectRecord.activeFile:Object.keys(projectRecord.files)[0]||'untitled.py';
   initial=projectRecord.files[filename]??'';
   try{localStorage.removeItem('build1234.code');localStorage.removeItem('build1234.filename');}catch{}

@@ -19,6 +19,7 @@ try{
  await page.locator('#run').click();
  await page.waitForFunction(()=>document.querySelector('#model-state').textContent==='result',null,{timeout:240000});
  assert.match(await page.locator('#cad-view').textContent(),/Puddle the duck/);
+ assert.match(await page.locator('#cad-view').textContent(),/Tail wake/);
  await page.locator('#toggle-split').click();
  assert.equal(await page.locator('.document-tab .is-active').count(),2);
  assert.equal(await page.locator('[role="tab"][aria-selected="true"]').count(),2);

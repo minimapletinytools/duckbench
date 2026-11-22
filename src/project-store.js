@@ -1,3 +1,5 @@
+import OLD_DUCK from './legacy/duck-v1.py?raw';
+
 /** Browser project files and the last open project, committed atomically in IndexedDB. */
 export async function openProjectStore() {
   const db = await new Promise((resolve, reject) => {
@@ -26,7 +28,7 @@ export async function openProjectStore() {
       tx.objectStore('projects').getAll().onsuccess = event => done(event.target.result);
     }),
     // Claim the previous active project once. The transaction also serializes first visits in two tabs.
-    defaultProject: (files, activeFile) => transaction(['projects','meta'],'readwrite',(tx,done)=>{
+    defaultProject: (files, activeFile, duck) => transaction(['projects','meta'],'readwrite',(tx,done)=>{
       const projects=tx.objectStore('projects'),meta=tx.objectStore('meta');
       const preferred=meta.get('defaultProject'),active=meta.get('active');
       active.onsuccess=()=>{
@@ -34,7 +36,16 @@ export async function openProjectStore() {
         function claim(previous){
           const now=Date.now();
           const record=previous || {id:crypto.randomUUID(),files,activeFile,created:now,updated:now,revision:0};
-          if(record.name!=='Default Project'){
+          let changed=record.name!=='Default Project';
+          for(const path of starterPaths){
+            if(!Object.hasOwn(record.files,path))continue;
+            const source=migrateExample(path,record.files[path],duck);
+            if(source!==record.files[path]){
+              record.files[path]=source;
+              changed=true;
+            }
+          }
+          if(changed){
             record.name='Default Project';record.revision++;projects.put(record);
           }
           meta.put(record.id,'defaultProject');meta.put(record.id,'active');done(record);
@@ -60,7 +71,7 @@ export async function openProjectStore() {
   };
 }
 
-// Upgrade only the exact unedited template shipped by early Duckbench versions.
+const starterPaths = ['duck.py', 'example.py', 'plate.py'];
 const OLD_EXAMPLE = `from build123d import *
 
 # Dimensions in millimeters.
@@ -71,5 +82,8 @@ result = plate - hole
 result.label = "Mounting plate"
 `;
 export function migrateExample(filename, code, duck) {
-  return ['example.py','plate.py'].includes(filename) && code.replaceAll('\r\n','\n').trim() === OLD_EXAMPLE.trim() ? duck : code;
+  if (!starterPaths.includes(filename)) return code;
+  const normalized = code.replaceAll('\r\n', '\n');
+  if (normalized === OLD_DUCK) return duck;
+  return filename !== 'duck.py' && normalized.trim() === OLD_EXAMPLE.trim() ? duck : code;
 }
