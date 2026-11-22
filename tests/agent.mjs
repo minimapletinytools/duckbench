@@ -28,8 +28,16 @@ async function signedOutPrompt(page) {
   await page.getByRole('button',{name:'Close agent panel'}).click();
   assert.equal(await page.locator('#toggle-agent').getAttribute('aria-pressed'),'false');
   await page.locator('#toggle-agent').click();
-  const provider=page.getByRole('button',{name:'Sign in with GitHub'});
-  assert.ok((await provider.boundingBox()).y > (await input.boundingBox()).y);
+  const signIn=page.getByRole('button',{name:'Sign in',exact:true});
+  assert.ok((await signIn.boundingBox()).y > (await input.boundingBox()).y);
+  const chooser=page.getByRole('dialog',{name:'Sign in to Duckbench'});
+  assert.ok(await chooser.isHidden());
+  await signIn.click();
+  assert.ok(await chooser.getByRole('button',{name:'Continue with GitHub'}).isVisible());
+  assert.ok(await chooser.getByRole('button',{name:'Continue with Google'}).isVisible());
+  await page.keyboard.press('Escape');
+  assert.ok(await chooser.isHidden());
+  assert.ok(await signIn.evaluate(button=>button===document.activeElement));
   await input.fill('Help me change the bill');
   await input.press('Enter');
   await page.locator('[data-id="status"]').getByText('Sign in below to use the built-in agent.').waitFor();
@@ -176,7 +184,8 @@ try {
         user:{id:'desktop',email:'desktop@example.test',aud:'authenticated'}}});
     });
     await page.getByLabel('Message to agent').fill('Which workspace is open?');
-    await page.getByRole('button', {name:'Sign in with Google'}).click();
+    await page.getByRole('button', {name:'Sign in',exact:true}).click();
+    await page.getByRole('button', {name:'Continue with Google'}).click();
     await page.getByText('desktop@example.test').waitFor();
     assert.equal(await page.getByLabel('Message to agent').inputValue(),'Which workspace is open?');
     await desktop.close(); desktop = null;
@@ -221,7 +230,8 @@ try {
     await signedOutPrompt(page);
     let balanceChecks=0;
     await page.route(base+'/account',route=>{balanceChecks++;return route.fulfill({json:{balanceUsd:1.25,usage:[{charged_micro_usd:2500}]}});});
-    await page.getByRole('button', {name:'Sign in with GitHub'}).click();
+    await page.getByRole('button', {name:'Sign in',exact:true}).click();
+    await page.getByRole('button', {name:'Continue with GitHub'}).click();
     await page.getByText('fixture@example.test').waitFor();
     assert.ok(exchanged);
     await page.waitForURL('http://127.0.0.1:8127/');

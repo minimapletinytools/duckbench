@@ -2,7 +2,9 @@
 .agent-account,.agent-mcp,.agent-compose { padding:10px 12px; border-bottom:1px solid var(--ka-border); }
 .agent-account { border-top:1px solid var(--ka-border);border-bottom:0;display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; font-size:12px; }
 .agent-account [data-id="identity"] { overflow-wrap:anywhere; }
-.agent-account [data-id="providers"] { display:flex; gap:5px; }
+.agent-sign-in { width:min(300px,calc(100vw - 32px)); }
+.agent-sign-in [data-id="providers"] { display:grid; gap:8px; margin:16px 0; }
+.agent-sign-in [data-provider] { min-height:36px; background:var(--ka-chrome-bg); }
 .agent-mcp { font-size:12px; }
 .agent-mcp summary { cursor:pointer; font-weight:550; }
 .agent-mcp p,.agent-panel output { color:var(--ka-muted); line-height:1.5; font-size:12px; }

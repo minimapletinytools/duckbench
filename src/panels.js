@@ -1,7 +1,7 @@
 export class PanelShell {
   constructor(root) {
     this.root=root; this.panels=new Map(); this.listeners=new Set(); this.mode='tabs'; this.active=null; this.cleanups=[];
-    root.innerHTML=`<div class="shell"><header class="titlebar"><div class="shell-brand"><img class="brand-icon" src="${new URL('icons/duck-64.png',document.baseURI).href}" width="25" height="25" alt="" /><span class="brand-name">DUCKBENCH</span></div><div id="toolbar" class="toolbar"></div><div class="layout-actions">
+    root.innerHTML=`<div class="shell"><header class="titlebar"><div class="shell-brand"><img class="brand-icon" src="${new URL('icons/duck-64.png',document.baseURI).href}" width="25" height="25" alt="" /><span class="brand-name" role="img" aria-label="Duckbench">${Array.from("DUCKBENCH", letter => `<span>${letter}</span>`).join("")}</span></div><div id="toolbar" class="toolbar"></div><div class="layout-actions">
       <button id="toggle-explorer" class="layout-toggle is-active" title="Toggle left explorer" aria-label="Toggle left explorer" aria-controls="left-slot" aria-pressed="true">◧</button>
       <button id="toggle-console" class="layout-toggle" title="Toggle output log" aria-label="Toggle output log" aria-controls="bottom-slot" aria-pressed="false">▤</button>
       <button id="toggle-split" class="layout-toggle" title="Split editor and preview" aria-label="Split editor and preview" aria-controls="center-body" aria-pressed="false">◨</button>

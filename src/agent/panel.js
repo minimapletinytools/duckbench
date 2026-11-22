@@ -24,9 +24,18 @@ export function createAgentPanel(project, {apply, run, runLabel, show, close}) {
     <form class="agent-compose"><textarea aria-label="Message to agent" rows="3" placeholder="Ask about this project…"></textarea>
     <div data-id="mentions" class="agent-mentions" hidden></div><div><output data-id="status" role="status"></output><button data-id="send" class="primary" disabled>Send</button><button type="button" data-id="cancel" hidden>Stop</button></div></form>
     <footer class="agent-account">
-      <span data-id="identity">Sign in with</span><div data-id="providers"><button data-provider="github" aria-label="Sign in with GitHub">GitHub</button><button data-provider="google" aria-label="Sign in with Google">Google</button></div><button data-id="logout" hidden>Sign out</button>
+      <button data-id="signIn" aria-haspopup="dialog" aria-controls="agent-sign-in" disabled>Sign in</button>
+      <span data-id="identity" hidden></span><button data-id="logout" hidden>Sign out</button>
       <div data-id="billing" class="agent-billing" hidden><span data-id="usage"></span><select data-id="model" aria-label="Agent model" hidden></select></div>
-    </footer>`;
+    </footer>
+    <dialog id="agent-sign-in" data-id="chooser" class="file-dialog agent-sign-in" aria-labelledby="agent-sign-in-title">
+      <h2 id="agent-sign-in-title">Sign in to Duckbench</h2>
+      <div data-id="providers">
+        <button data-provider="github" autofocus>Continue with GitHub</button>
+        <button data-provider="google">Continue with Google</button>
+      </div>
+      <form method="dialog"><button>Cancel</button></form>
+    </dialog>`;
   const ui = Object.fromEntries([...element.querySelectorAll('[data-id]')].map(node => [node.dataset.id, node]));
   ui.close.onclick = close;
   const thread = element.querySelector('[role="log"]');
@@ -137,12 +146,14 @@ export function createAgentPanel(project, {apply, run, runLabel, show, close}) {
   ui.apply.onclick=()=>accept(false);ui.applyRun.onclick=()=>accept(true);
 
   function controls() {
-    ui.identity.textContent = user ? user.email || 'Signed in' : 'Sign in with';
-    ui.providers.hidden = !!user;
+    ui.identity.textContent = user?.email || 'Signed in';
+    ui.identity.hidden = !user;
+    ui.signIn.hidden = !!user;
+    ui.signIn.disabled = !account || signingIn;
+    if (user && ui.chooser.open) ui.chooser.close();
     ui.loginHint.hidden = !!user;
     ui.past.disabled = !user;
     ui.welcome.hidden = thread.childElementCount > 0;
-    for (const button of ui.providers.children) button.disabled = !account || signingIn;
     ui.logout.hidden = ui.billing.hidden = !user;
     ui.connect.disabled = !desktop && (!user || !relay);
     ui.mcpLogin.hidden = !!desktop || !!user;
@@ -215,9 +226,11 @@ export function createAgentPanel(project, {apply, run, runLabel, show, close}) {
       ui.connection.textContent = 'Client setup copied';
     } catch (error) { ui.connection.textContent = 'Could not copy setup. ' + error.message; }
   };
+  ui.signIn.onclick = () => ui.chooser.showModal();
   ui.providers.onclick = async event => {
     const provider = event.target.dataset.provider;
-    if (!provider || !account || signingIn) return;
+    if (!provider || !account || user || signingIn) return;
+    ui.chooser.close();
     if(context){
       try{
         const key='duckbench.signInDraft.'+context;
