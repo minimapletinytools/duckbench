@@ -1,5 +1,6 @@
 import {createAccount} from './account.js';
 import {createRelay} from './relay.js';
+import {clients, setupText} from './mcp-setup.js';
 import {callTool, instructions, tools} from './tools.js';
 import {chat} from './chat.js';
 import './panel.css';
@@ -11,7 +12,14 @@ export function createAgentPanel(project, {apply, run, runLabel, show, close}) {
   element.innerHTML = `<div class="panel-toolbar"><strong>AGENT</strong><span class="panel-spacer"></span><button data-id="past">History</button><button data-id="clear">New chat</button><button data-id="close" type="button" class="agent-close" aria-label="Close agent panel" title="Close agent panel">×</button></div>
     <div data-id="threads" class="agent-history" hidden></div>
     <details class="agent-mcp"><summary>MCP connection<span data-id="indicator"></span></summary>
-      <p data-id="scope"></p><p data-id="mcpLogin" hidden>Sign in below to connect MCP in the browser.</p><div><button data-id="connect">Connect MCP</button><button data-id="copy" hidden>Copy client setup</button></div><output data-id="connection">Disconnected</output></details>
+      <p data-id="scope"></p><label class="mcp-toggle"><input type="checkbox" data-id="connect"> Enable MCP server</label>
+      <p data-id="mcpLogin" hidden>Sign in below to connect MCP in the browser.</p>
+      <output data-id="connection">Disconnected</output>
+      <div data-id="setups" hidden>
+        <button type="button" class="primary" data-id="copyAll">Copy for all agents</button>
+        <p>Or copy setup for one client</p><div class="mcp-clients" data-id="clients"></div>
+        <output data-id="copyHint" class="mcp-copy-hint" aria-live="polite"></output>
+      </div></details>
     <div class="agent-thread">
       <div data-id="welcome" class="agent-welcome">
         <p><span aria-hidden="true">↑</span> Enable MCP above to connect your own agent.</p>
@@ -157,15 +165,16 @@ export function createAgentPanel(project, {apply, run, runLabel, show, close}) {
     ui.logout.hidden = ui.billing.hidden = !user;
     ui.connect.disabled = !desktop && (!user || !relay);
     ui.mcpLogin.hidden = !!desktop || !!user;
-    ui.connect.textContent = connection ? 'Disconnect MCP' : 'Connect MCP';
+    ui.connect.checked = !!connection;
     ui.indicator.textContent=session?' · Connected':'';
-    ui.copy.hidden = !session;
+    ui.setups.hidden = !session;
     ui.send.disabled = !input.value.trim() || !!turn;
     ui.send.hidden = !!turn;
     ui.cancel.hidden = !turn;
   }
   function report(message, setup) {
     session = setup;
+    ui.copyHint.textContent = '';
     ui.connection.textContent = message;
     if (!setup && !['Connecting…','Reconnecting…'].includes(message)) connection = null;
     controls();
@@ -206,8 +215,8 @@ export function createAgentPanel(project, {apply, run, runLabel, show, close}) {
     const result = method === 'tools/list' ? {tools} : await callTool(project, params.name, params.arguments);
     if (scope === connection) await desktop.replyMcp(id, result);
   });
-  ui.connect.onclick = async () => {
-    if (connection) { stop(); return; }
+  ui.connect.onchange = async () => {
+    if (!ui.connect.checked) { stop(); return; }
     const scope = connection = crypto.randomUUID();
     report('Connecting…');
     if (desktop) {
@@ -217,15 +226,35 @@ export function createAgentPanel(project, {apply, run, runLabel, show, close}) {
       } catch (error) { if (connection === scope) report(error.message); }
     } else relay.start();
   };
-  ui.copy.onclick = async () => {
-    if (!session) return;
-    try {
-      await navigator.clipboard.writeText(JSON.stringify({mcpServers: {duckbench: {
-        url: session.url, headers: {Authorization: 'Bearer ' + session.token},
-      }}}, null, 2));
-      ui.connection.textContent = 'Client setup copied';
-    } catch (error) { ui.connection.textContent = 'Could not copy setup. ' + error.message; }
+  let copyAttempt = 0;
+  const mcpSettings = element.querySelector('.agent-mcp');
+  mcpSettings.ontoggle = () => {
+    if (!mcpSettings.open) { copyAttempt++; ui.copyHint.textContent = ''; }
   };
+  async function copySetup(client) {
+    const active = session;
+    if (!active) return;
+    const attempt = ++copyAttempt;
+    let hint;
+    try {
+      await navigator.clipboard.writeText(setupText(active, client));
+      hint = 'Copied. ' + (client?.next || 'Paste the prompt into your own agent. It will set up Duckbench and check which project is open.');
+    } catch {
+      hint = 'Clipboard access failed. Allow clipboard access and try again.';
+    }
+    if (session === active && attempt === copyAttempt) {
+      ui.copyHint.textContent = hint;
+      ui.copyHint.scrollIntoView({block: 'nearest'});
+    }
+  }
+  ui.copyAll.onclick = () => copySetup();
+  for (const client of clients) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = client.label;
+    button.onclick = () => copySetup(client);
+    ui.clients.append(button);
+  }
   ui.signIn.onclick = () => ui.chooser.showModal();
   ui.providers.onclick = async event => {
     const provider = event.target.dataset.provider;

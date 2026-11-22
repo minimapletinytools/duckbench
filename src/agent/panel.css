@@ -48,3 +48,11 @@
   .agent-thread { min-height:7em; }
   .agent-compose textarea { max-height:14vh; }
 }
+
+.mcp-toggle { display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
+.mcp-toggle input { margin:0; accent-color:var(--ka-accent); }
+.agent-mcp [data-id="setups"] { margin-top:8px; }
+.agent-mcp [data-id="setups"] p { margin:8px 0 4px; }
+.mcp-clients { display:flex; flex-wrap:wrap; gap:4px; }
+.mcp-clients button { padding:3px 7px; }
+.mcp-copy-hint:not(:empty) { padding-left:8px; border-left:2px solid var(--ka-accent); color:var(--ka-fg); }

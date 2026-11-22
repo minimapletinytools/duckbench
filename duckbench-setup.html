@@ -79,8 +79,8 @@ npx wrangler secret put OPENROUTER_API_KEY --config wrangler.duckbench.jsonc</co
 <h2>Connect and verify</h2>
 <ol>
 <li>In Duckbench, open the project you want to share. In the browser, sign in first.</li>
-<li>Choose <strong>Agent → MCP connection → Connect MCP → Copy client setup</strong>.</li>
-<li>Paste the copied JSON into an MCP client that accepts <code>mcpServers</code>, or enter its URL and <code>Authorization</code> header in the client’s Streamable HTTP settings. The header contains a session credential, so share the setup only with the intended client.</li>
+<li>Choose <strong>Agent → MCP connection → Enable MCP server → Copy for all agents</strong>.</li>
+<li>Paste the setup prompt into your external agent. For manual setup, click your client’s name and follow the instructions beneath the buttons. Choose <strong>URL and token</strong> for other Streamable HTTP clients. The setup contains a session credential for the intended client.</li>
 <li>Keep Duckbench open. Ask the client to <em>call workbench_state and tell me the active filename</em>. The returned filename should match the Duckbench editor. Switching projects or disconnecting ends the session.</li>
 </ol>
 </section>

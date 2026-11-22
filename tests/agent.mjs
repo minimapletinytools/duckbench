@@ -17,8 +17,25 @@ let browser, fixture, vite, desktop;
 async function setupFromPanel(page) {
   await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', {configurable: true,
     value: {writeText: async text => { window.copied = text; }}}));
-  await page.getByRole('button', {name: 'Copy client setup'}).click();
-  return page.evaluate(() => JSON.parse(window.copied).mcpServers.duckbench);
+  const settings=page.locator('.agent-mcp');
+  async function copy(label) {
+    await settings.getByRole('button',{name:label,exact:true}).click();
+    await settings.locator('[data-id="copyHint"]').getByText(/^Copied[.]/).waitFor();
+    return page.evaluate(()=>window.copied);
+  }
+  const server=JSON.parse(await copy('Cursor')).mcpServers.duckbench;
+  const expected=server.headers.Authorization;
+  assert.ok(expected.startsWith('Bearer ') && expected.length>25);
+  for(const label of ['Claude Code','Codex','Antigravity (agy)','Claude Desktop','VS Code','URL and token']){
+    const text=await copy(label);
+    assert.ok(text.includes(server.url) && text.includes(expected),label);
+    if(label==='VS Code')assert.equal(JSON.parse(text).servers.duckbench.type,'http');
+    if(label==='Claude Desktop')assert.equal(JSON.parse(text).mcpServers.duckbench.command,'npx');
+  }
+  const prompt=await copy('Copy for all agents');
+  assert.ok(prompt.includes(server.url) && prompt.includes(expected) && prompt.includes('workbench_state'));
+  assert.match(await settings.locator('[data-id="copyHint"]').textContent(),/Paste the prompt/);
+  return server;
 }
 
 async function signedOutPrompt(page) {
@@ -48,7 +65,7 @@ async function signedOutPrompt(page) {
 async function exercise(page, isDesktop) {
   assert.equal(await page.locator('#toggle-agent').getAttribute('aria-pressed'),'true');
   await page.getByText('MCP connection', {exact: true}).click();
-  await page.getByRole('button', {name: 'Connect MCP', exact: true}).click();
+  await page.getByRole('checkbox',{name:'Enable MCP server'}).check();
   const {url, headers} = await setupFromPanel(page);
   const client = new Client({name:'duckbench-test', version:'1'});
   try {
@@ -92,8 +109,9 @@ async function exercise(page, isDesktop) {
       await page.getByText('The file contains a comment.', {exact:true}).waitFor();
       assert.equal(requests, 2);
       assert.ok(await page.locator('[data-id=welcome]').isHidden());
-      await page.getByRole('button',{name:'Disconnect MCP'}).click();
+      await page.getByRole('checkbox',{name:'Enable MCP server'}).uncheck();
       await page.getByText('Disconnected',{exact:true}).waitFor();
+      assert.ok(await page.getByRole('button',{name:'Copy for all agents'}).isHidden());
       let status;
       for (let n = 0; n < 30; n++) {
         status = (await fetch(url, {headers})).status;
@@ -110,7 +128,7 @@ async function exercise(page, isDesktop) {
       await page.getByRole('button',{name:'What is in duck.py?'}).click();
       assert.equal(await page.getByLabel('Message to agent').inputValue(),'Continue checking the model');
     } else {
-      await page.getByRole('button', {name:'Disconnect MCP'}).click();
+      await page.getByRole('checkbox',{name:'Enable MCP server'}).uncheck();
       await assert.rejects(fetch(url, {headers}));
     }
   } finally { await client.close(); }
@@ -133,7 +151,7 @@ try {
     }, projectPath);
     page.once('dialog',d=>d.accept());
     await page.locator('#open-folder').click();
-    await page.getByRole('button', {name:'Connect MCP', exact:true}).click();
+    await page.getByRole('checkbox',{name:'Enable MCP server'}).check();
     const setup = await setupFromPanel(page);
     const diskClient = new Client({name:'disk-test',version:'1'});
     try {
@@ -166,7 +184,7 @@ try {
       assert.equal(build.lastSuccessfulId,build.lastAttempt.id);
       assert.equal(build.lastAttempt.status,'success');
     } finally { await diskClient.close(); }
-    await page.getByRole('button', {name:'Disconnect MCP'}).click();
+    await page.getByRole('checkbox',{name:'Enable MCP server'}).uncheck();
     // Stand in for the system browser returning from Google with a PKCE code.
     await desktop.evaluate(({shell}) => {
       shell.openExternal = async address => {
