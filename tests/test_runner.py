@@ -92,3 +92,19 @@ class RunnerTests(unittest.TestCase):
         self.assertIn('Box', runner.api_lookup()['names'])
         with self.assertRaisesRegex(ValueError, 'Similar names: Box'):
             runner.api_lookup('Boxx')
+
+    def test_source_read_lists_reads_and_searches_build123d_only(self):
+        self.assertRegex(runner.api_lookup('Box')['source'], r'^build123d/objects_part\.py:\d+$')
+        files = runner.dispatch({'method': 'source', 'params': {}})['files']
+        self.assertTrue(any(name.startswith('build123d/topology/one_d.py (') for name in files))
+        self.assertFalse(any('__pycache__' in name for name in files))
+        by_module = runner.source_read('build123d.objects_part')
+        self.assertEqual(by_module['path'], 'build123d/objects_part.py')
+        self.assertEqual(runner.source_read('build123d/objects_part.py')['text'], by_module['text'])
+        self.assertIn('build123d/topology/composite.py', runner.source_read('build123d.topology')['files'][1])
+        found = runner.source_read(search=r'^class Box\b')
+        self.assertRegex(found['matches'][0], r'^build123d/objects_part\.py:\d+: class Box')
+        self.assertTrue(runner.source_read(search='def', limit=3)['truncated'])
+        for outside in ['../os.py', 'build123d/../../os.py', '/etc/hosts']:
+            with self.assertRaises(ValueError):
+                runner.source_read(outside)

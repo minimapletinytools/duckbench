@@ -187,6 +187,8 @@ const project=agentProject({
   },
   picks:limit=>({picks:cad.picks(limit)}),
   api:args=>{if(!runtime)throw new Error('Python is not available.');return runtime.call('api',args);},
+  source:args=>{if(!runtime)throw new Error('Python is not available.');return runtime.call('source',args);},
+  camera:args=>{const camera=cad.camera(args);return {...camera,...(stalePreview()?{note:'The code has changed since this model was built.'}:{})};},
   write:agentWrite,remove:removeFile,rename:agentRename,
   /** Save one buffer to disk (desktop), for an MCP client's change. */
   async save(key){const doc=documents.get(key);if(!window.desktop||!doc||doc.code===doc.saved)return;const code=doc.code;await window.desktop.saveProjectBuffer({filename:key,saved:doc.saved,code});doc.saved=code;sync();},

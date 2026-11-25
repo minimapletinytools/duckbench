@@ -32,6 +32,15 @@ export function createCadPanel(container) {
     layout:schedule,
     clear(){viewer?.dispose();host?.remove();viewer=null;host=null;picks.length=0;},
     picks:limit=>picks.slice(0,limit),
+    /** The camera, after moving it to a preset view, position, target or zoom when given. */
+    camera({view,position,target,zoom}={}){
+      if(!viewer)throw new Error('No model is shown. Build one first.');
+      if(view)viewer.presetCamera(view);
+      if(position||target||zoom!==undefined)viewer.setCameraLocationSettings(position??null,null,target??null,zoom??null);
+      const round=values=>values.map(value=>+value.toFixed(3));
+      const now=viewer.getCameraLocationSettings();
+      return {position:round(now.position),target:round(now.target),zoom:+now.zoom.toFixed(4),projection:viewer.getCameraType()};
+    },
     /** The canvas as an image at most 1024 pixels wide, after moving the camera to a preset view. */
     async screenshot(view='current'){
       if(!viewer)throw new Error('No model is shown. Build one first.');

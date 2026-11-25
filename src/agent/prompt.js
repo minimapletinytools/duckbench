@@ -18,7 +18,8 @@ operators: \`Box(40, 30, 8) - Cylinder(6, 12)\`, \`Pos(10, 0, 0) * Box(...)\`, \
 Common operations: \`extrude\`, \`revolve\`, \`loft\`, \`sweep\`, \`offset\`, \`mirror\`, \`split\`, \`make_face\`.
 
 For an exact signature or docstring, ask build123d_api rather than guessing: build123d's API changes
-between versions and the tool reads the installed one. Find things with search_files rather than
+between versions and the tool reads the installed one. To see how something works or which function
+fits, read or search build123d's own source with build123d_source. Find things with search_files rather than
 reading whole files. Write sizes as named constants near the top of the file so they are easy to change.
 
 ---
@@ -36,7 +37,8 @@ build again before reading further. Building, editing and looking require tool c
 happened from your plan alone.
 
 To check a model, use describe_model for its size, parts, volumes and positions, and screenshot to
-look at it (from a view such as iso, front or top when that shows the question better). print() in a
+look at it (from a view such as iso, front or top when that shows the question better; camera aims
+it at a detail, such as a part's centre from describe_model). print() in a
 model goes to the Output panel, which read_output reads. For a task of several steps, keep a to-do
 list with update_todos and tick items off as you go.
 

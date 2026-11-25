@@ -23,6 +23,7 @@ const MAX_MATCHES = 100;
 const VIEWS = ['current', 'iso', 'front', 'rear', 'left', 'right', 'top', 'bottom'];
 
 const string = (description, extra) => ({type: 'string', ...(description ? {description} : {}), ...extra});
+const point = description => ({type: 'array', items: {type: 'number'}, minItems: 3, maxItems: 3, description});
 const path = string('A project-relative path, e.g. parts/wheel.py.');
 
 function tool(name, description, properties, required, run, {effect = 'read', only} = {}) {
@@ -137,8 +138,28 @@ export const tools = [
   tool('get_selection', 'What the user picked in the 3D preview lately, newest first: each part\'s name, path and bounding box. ' +
     'Use it when they refer to "this" or "the selected" part.',
     {limit: {type: 'integer', minimum: 1, maximum: 20}}, [], (project, {limit = 10}) => project.picks(limit)),
+  tool('camera', 'The 3D preview\'s camera: where it looks from and at, in model millimetres (Z up), its zoom and projection. ' +
+    'Give view, position, target or zoom to move it there (the user sees it move); then screenshot to look. A position or ' +
+    'target you give is kept as is, so give both to frame a part, e.g. target its centre from describe_model.',
+    {view: string('A preset view to start from.', {enum: VIEWS.filter(view => view !== 'current')}),
+      position: point('Where the camera is, [x, y, z].'), target: point('The point it looks at, [x, y, z].'),
+      zoom: {type: 'number', minimum: 0.01, maximum: 100, description: 'Zoom factor; 1 fits the model.'}}, [],
+    (project, args) => project.camera(args), {effect: 'ui'}),
+  tool('build123d_source', 'Read the installed build123d\'s own source code (read-only), to see how something works or find ' +
+    'the right function. With no arguments, lists its files. With path (build123d/operations_generic.py, a module like ' +
+    'build123d.topology.one_d, or a folder), reads the file with line numbers, a page at a time, or lists the folder. With ' +
+    'search, finds a Python regular expression in it, under path if given. build123d_api names where a name is defined.',
+    {path: string('A file, module or folder in build123d.'), search: string('A Python regular expression, e.g. "def fillet".'),
+      ignore_case: {type: 'boolean'}, offset: {type: 'integer', minimum: 1, description: 'Reading a file: the first line (1-based).'},
+      limit: {type: 'integer', minimum: 1, description: 'Reading a file: how many lines.'}}, [],
+    async (project, {path: wanted, search, ignore_case: ignoreCase, offset = 1, limit = MAX_READ_LINES}) => {
+      const result = await project.source({path: wanted, search, ignore_case: !!ignoreCase, limit: MAX_MATCHES});
+      if (result.matches) return result.matches.length ? result.matches.join('\n') + (result.truncated ? `\n(first ${MAX_MATCHES} matches only)` : '') : 'No matches.';
+      if (result.files) return `build123d ${result.version}\n` + result.files.join('\n');
+      return `${result.path} (build123d ${result.version})\n${numberedLines(result.text, offset, limit)}`;
+    }, {effect: 'run'}),
   tool('build123d_api', 'The installed build123d\'s exact signature and docstring for a name (Box, fillet, BuildPart, Axis.Z, ' +
-    'Location.position); for a class, its own members too. With search, finds names whose name or summary matches a regular ' +
+    'Location.position), and where it is defined; for a class, its own members too. With search, finds names whose name or summary matches a regular ' +
     'expression. With neither, lists every public name. The first use in the browser may wait for Python to load.',
     {name: string('A build123d name, dotted for members.'), search: string('A regular expression, e.g. "chamfer|fillet".')}, [],
     (project, args) => project.api(args), {effect: 'run'}),
@@ -183,6 +204,7 @@ export function validPath(path, allowRoot = false) {
 function invalid(value, schema, name) {
   if (schema.type === 'string' && typeof value !== 'string') return `${name} must be a string.`;
   if (schema.type === 'integer' && !Number.isSafeInteger(value)) return `${name} must be a whole number.`;
+  if (schema.type === 'number' && !Number.isFinite(value)) return `${name} must be a number.`;
   if (schema.type === 'boolean' && typeof value !== 'boolean') return `${name} must be true or false.`;
   if (schema.enum && !schema.enum.includes(value)) return `${name} must be one of ${schema.enum.join(', ')}.`;
   if (schema.minimum !== undefined && value < schema.minimum) return `${name} must be at least ${schema.minimum}.`;
@@ -190,6 +212,7 @@ function invalid(value, schema, name) {
   if (schema.maxLength !== undefined && value.length > schema.maxLength) return `${name} is too long.`;
   if (schema.type === 'array') {
     if (!Array.isArray(value)) return `${name} must be a list.`;
+    if (value.length < (schema.minItems ?? 0) || value.length > (schema.maxItems ?? Infinity)) return `${name} has the wrong number of items.`;
     for (const item of value) { const problem = invalid(item, schema.items, name + ' item'); if (problem) return problem; }
   }
   if (schema.type === 'object') {

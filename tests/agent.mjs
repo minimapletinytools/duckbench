@@ -73,7 +73,7 @@ async function exercise(page, isDesktop) {
     assert.equal((await fetch(url, {method:'POST'})).status, 401);
     await client.connect(new StreamableHTTPClientTransport(new URL(url), {requestInit: {headers}}));
     assert.match(client.getInstructions(), /build123d/);
-    assert.deepEqual((await client.listTools()).tools.map(t => t.name).sort(), ['build123d_api','build_result','delete_file','describe_model','edit_file','get_selection',
+    assert.deepEqual((await client.listTools()).tools.map(t => t.name).sort(), ['build123d_api','build123d_source','build_result','camera','delete_file','describe_model','edit_file','get_selection',
       'list_files','read_file','read_output','rename_file','run_build','screenshot','search_files','workbench_state','write_file']);
     const call = (name,args) => client.callTool({name, arguments: args});
     const call2 = call;
@@ -258,6 +258,16 @@ try {
       assert.match(await text('search_files',{pattern:'radius',glob:'*.py'}), /model\.py:2: from parts\.wheel import radius[^]*parts\/wheel\.py:1: radius = 36/);
       assert.match(await text('build123d_api',{name:'Cylinder'}), /"signature":"\(radius: /);
       assert.match(await text('build123d_api',{search:'^fillet$'}), /fillet/);
+      assert.match(await text('build123d_api',{name:'Cylinder'}), /"source":"build123d\/objects_part\.py:\d+"/);
+      assert.match(await text('build123d_source'), /^build123d \S+\nbuild123d\/__init__\.py \(\d+ lines\)/);
+      assert.match(await text('build123d_source',{search:'^class Cylinder\\b'}), /^build123d\/objects_part\.py:\d+: class Cylinder/);
+      assert.match(await text('build123d_source',{path:'build123d.objects_part',limit:3}), /^build123d\/objects_part\.py \(build123d [^)]+\)\n1\t[^]*read on from line 4\)$/);
+      assert.equal((await tool('build123d_source',{path:'../os.py'})).isError, true);
+      const aimed = JSON.parse(await text('camera',{view:'front',target:[0,0,2.5],zoom:2}));
+      assert.deepEqual(aimed.target, [0,0,2.5]);
+      assert.equal(aimed.zoom, 2);
+      assert.deepEqual(JSON.parse(await text('camera')).target, [0,0,2.5]);
+      assert.equal((await tool('camera',{target:[0,0]})).isError, true);
       const shot = await tool('screenshot',{view:'iso'});
       assert.equal(shot.content[0].type, 'image');
       assert.ok(shot.content[0].data.length > 2000);

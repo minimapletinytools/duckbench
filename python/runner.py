@@ -167,6 +167,9 @@ def api_lookup(name=None, search=None):
         if signature != "(*args, **kwargs)":
             info["signature"] = short(signature.replace("(self, ", "(").replace("(self)", "()"))
             break
+    where = _source_location(obj)
+    if where:
+        info["source"] = where
     doc = inspect.getdoc(obj) or ""
     info["doc"] = doc[:6000] + ("\n[…cut off]" if len(doc) > 6000 else "")
     if inspect.isclass(obj):
@@ -187,6 +190,77 @@ def api_lookup(name=None, search=None):
     return info
 
 
+def _source_location(obj):
+    """Where build123d defines `obj`, as build123d/path.py:line, for build123d_source."""
+    import inspect
+    import build123d
+    target = obj.fget if isinstance(obj, property) else obj
+    try:
+        file = inspect.getsourcefile(target)
+        line = inspect.getsourcelines(target)[1]
+    except (TypeError, OSError):
+        return None
+    root = os.path.dirname(os.path.realpath(build123d.__file__))
+    file = os.path.realpath(file or "")
+    if not file.startswith(root + os.sep):
+        return None
+    return "build123d/" + os.path.relpath(file, root).replace(os.sep, "/") + f":{line}"
+
+
+_SOURCE_TYPES = (".py", ".pyi", ".js", ".txt")
+
+
+def _source_files(root, folder):
+    for path, dirs, names in os.walk(folder):
+        dirs[:] = sorted(d for d in dirs if d != "__pycache__" and not d.startswith("."))
+        for name in sorted(names):
+            if name.endswith(_SOURCE_TYPES):
+                yield os.path.relpath(os.path.join(path, name), root).replace(os.sep, "/")
+
+
+def source_read(path=None, search=None, ignore_case=False, limit=100):
+    """The installed build123d's own source, read-only: list it, read a file or module, or search it."""
+    import re
+    import build123d
+    root = os.path.dirname(os.path.realpath(build123d.__file__))
+    shown = lambda relative: "build123d/" + relative if relative != "." else "build123d"
+    target = root
+    if path:
+        wanted = path.strip().strip("/")
+        if re.fullmatch(r"build123d(\.[A-Za-z_][A-Za-z0-9_]*)+", wanted):
+            # A module name, e.g. build123d.topology.one_d.
+            wanted = wanted.replace(".", "/")
+            wanted += ".py" if os.path.isfile(os.path.join(root, wanted.split("/", 1)[1] + ".py")) else ""
+        wanted = wanted.removeprefix("build123d").lstrip("/")
+        target = os.path.realpath(os.path.join(root, wanted))
+        if target != root and not target.startswith(root + os.sep):
+            raise ValueError("Read files inside build123d only.")
+        if not os.path.exists(target):
+            raise ValueError(f"build123d has no {path}. List its files with no path.")
+    if search:
+        pattern = re.compile(search, re.IGNORECASE if ignore_case else 0)
+        files = [os.path.relpath(target, root)] if os.path.isfile(target) else list(_source_files(root, target))
+        matches = []
+        for relative in files:
+            with open(os.path.join(root, relative), encoding="utf-8", errors="replace") as handle:
+                for number, line in enumerate(handle, 1):
+                    if pattern.search(line):
+                        matches.append(f"{shown(relative)}:{number}: {line.strip()[:200]}")
+                        if len(matches) > limit:
+                            return {"version": build123d.__version__, "matches": matches[:limit], "truncated": True}
+        return {"version": build123d.__version__, "matches": matches, "truncated": False}
+    if os.path.isdir(target):
+        files = []
+        for relative in _source_files(root, target):
+            with open(os.path.join(root, relative), encoding="utf-8", errors="replace") as handle:
+                files.append(f"{shown(relative)} ({sum(1 for _ in handle)} lines)")
+        return {"version": build123d.__version__, "files": files}
+    if not target.endswith(_SOURCE_TYPES):
+        raise ValueError("Read build123d's source and text files only.")
+    with open(target, encoding="utf-8", errors="replace") as handle:
+        return {"version": build123d.__version__, "path": shown(os.path.relpath(target, root).replace(os.sep, "/")), "text": handle.read()}
+
+
 def dispatch(request):
     if request["method"] == "run":
         return run_model(**request["params"])
@@ -196,6 +270,8 @@ def dispatch(request):
         return describe_model(**request["params"])
     if request["method"] == "api":
         return api_lookup(**request["params"])
+    if request["method"] == "source":
+        return source_read(**request["params"])
     raise ValueError("Unknown runner method")
 
 

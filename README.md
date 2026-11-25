@@ -52,7 +52,7 @@ On Apple silicon the bundle is `release/viewer/mac-arm64/Duckbench Viewer.app`. 
 
 In the explorer, use **Find a file** (⌘P / Ctrl+P), arrow keys and Enter to open a match. Right-click a Python file and choose **Set as run target** to keep building it while editing a helper. The run button shows the target. Browser builds use current project buffers. On desktop, **Save changed files & Run** writes edited project helpers before Python imports them.
 
-The Agent panel opens by default. Choose **Sign in** below the prompt, then select GitHub or Google to use the built-in agent and see your Kigumi credit balance. Close the panel with **×** and reopen it with **🤖** in the header. Mention a file with `@path`, or use **Ask agent about this file** in the explorer. The built-in agent can read and search the project, build the model, read the Output panel, measure the model (`describe_model`), look at a screenshot of the preview, look up the installed build123d's exact signatures, and create, edit, rename or delete project files. Each message tells it the active file, the editor's selected text, the last build and the part last picked in the 3D preview.
+The Agent panel opens by default. Choose **Sign in** below the prompt, then select GitHub or Google to use the built-in agent and see your Kigumi credit balance. Close the panel with **×** and reopen it with **🤖** in the header. Mention a file with `@path`, or use **Ask agent about this file** in the explorer. The built-in agent can read and search the project, build the model, read the Output panel, measure the model (`describe_model`), look at a screenshot of the preview, aim the preview's camera, look up the installed build123d's exact signatures, read its source code, and create, edit, rename or delete project files. Each message tells it the active file, the editor's selected text, the last build and the part last picked in the 3D preview.
 
 The setting under the message box controls file changes:
 
@@ -82,7 +82,9 @@ The model picker uses the Duckbench Worker catalog. Chat charges the signed-in K
 | `describe_model` | Measure the displayed model and each labelled part: bounding box, volume, centre of mass, colour and topology counts. |
 | `screenshot` | Return a picture of the 3D preview, optionally after moving the camera to a preset view. |
 | `get_selection` | List the parts the user picked in the preview, newest first. |
-| `build123d_api` | Look up the installed build123d's signatures and docstrings, or search its names. |
+| `camera` | Read the preview's camera position, target, zoom and projection, or move it to a preset view, position, target or zoom. |
+| `build123d_api` | Look up the installed build123d's signatures, docstrings and source locations, or search its names. |
+| `build123d_source` | List, read or search the installed build123d's own source code (read-only). |
 | `edit_file` | Replace text in a project file; `old_string` must match once unless `replace_all`. |
 | `write_file` | Create a project file (and its folders), or replace one whole. |
 | `delete_file` | Delete one project file (on desktop, to the Trash). |
