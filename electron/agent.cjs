@@ -25,11 +25,24 @@ function installAgent({win, ipcMain, shell}) {
     }
     const controller = new AbortController();
     requests.set(id, controller);
-    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(120000)]);
+    // A streamed reply may run for minutes; it is cut off only after 90 seconds without data.
+    let idle;
+    const quiet = () => { clearTimeout(idle); idle = setTimeout(() => controller.abort(new Error('The model stopped responding.')), init.stream ? 90000 : 120000); };
+    quiet();
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(900000)]);
     try {
-      const response = await fetch(new URL(path, config.backend), {...init, redirect: 'error', signal});
+      const {stream, ...request} = init;
+      const response = await fetch(new URL(path, config.backend), {...request, redirect: 'error', signal});
+      if (stream && response.ok && response.body && /event-stream/.test(response.headers.get('content-type') || '')) {
+        const decoder = new TextDecoder();
+        for await (const chunk of response.body) {
+          quiet();
+          win.webContents.send('agent:chunk', {id, text: decoder.decode(chunk, {stream: true})});
+        }
+        return {status: response.status, streamed: true};
+      }
       return {status: response.status, data: await response.json().catch(() => null)};
-    } finally { requests.delete(id); }
+    } finally { clearTimeout(idle); requests.delete(id); }
   });
   handle('agent:authorize', async address => {
     const url = new URL(address);
@@ -78,7 +91,7 @@ function installAgent({win, ipcMain, shell}) {
     try {
       return await new Promise((resolve, reject) => {
         pending.set(id, {resolve, reject});
-        timer = setTimeout(() => reject(new Error('Workbench timed out.')), 15000);
+        timer = setTimeout(() => reject(new Error('Workbench timed out.')), 120000);
         win.webContents.send('agent:call', {scope, id, method, params});
       });
     } finally { pending.delete(id); clearTimeout(timer); }

@@ -52,9 +52,17 @@ On Apple silicon the bundle is `release/viewer/mac-arm64/Duckbench Viewer.app`. 
 
 In the explorer, use **Find a file** (⌘P / Ctrl+P), arrow keys and Enter to open a match. Right-click a Python file and choose **Set as run target** to keep building it while editing a helper. The run button shows the target. Browser builds use current project buffers. On desktop, **Save changed files & Run** writes edited project helpers before Python imports them.
 
-The Agent panel opens by default. Choose **Sign in** below the prompt, then select GitHub or Google to use the built-in agent and see your Kigumi credit balance. Close the panel with **×** and reopen it with **🤖** in the header. Mention a file with `@path`, or use **Ask agent about this file** in the explorer. The agent can propose an edit to any project text file. Review the path and diff, then choose **Apply edit**, **Apply & Run** or **Discard**. Duckbench checks the original text again on approval. Native edits stay in memory until saved or explicitly saved for a build.
+The Agent panel opens by default. Choose **Sign in** below the prompt, then select GitHub or Google to use the built-in agent and see your Kigumi credit balance. Close the panel with **×** and reopen it with **🤖** in the header. Mention a file with `@path`, or use **Ask agent about this file** in the explorer. The built-in agent can read and search the project, build the model, read the Output panel, measure the model (`describe_model`), look at a screenshot of the preview, look up the installed build123d's exact signatures, and create, edit, rename or delete project files. Each message tells it the active file, the editor's selected text, the last build and the part last picked in the 3D preview.
 
-The model picker uses the Duckbench Worker catalog. Chat charges the signed-in Kigumi account. Sending a message can send mentioned files and project text requested by the model to that backend. Drafts and conversations are stored locally for the current account and project. Reopen **History** to resume a previous conversation.
+The setting under the message box controls file changes:
+
+- **Ask before edits** (the default) shows each change for review. Choose **Apply edit**, **Apply & Run** or **Discard**. A discarded change is reported to the agent.
+- **Edit automatically** applies changes without asking.
+- **Plan only** lets the agent read, build and look but refuses every file change.
+
+When a Python file changes and the model has been built before, Duckbench rebuilds it and the agent sees whether it built. After a turn that changed files, **Undo these changes** puts them back. Duckbench checks a file's text again before changing it. On desktop, changes stay in editor buffers until saved, or until a build saves them as **Run** does. For a task of several steps the agent keeps a to-do list, pinned above the message box. Replies stream in as they are written.
+
+The model picker uses the Duckbench Worker catalog. Chat charges the signed-in Kigumi account. Sending a message sends the context above, mentioned files, and project text, screenshots and measurements requested by the model to that backend. Drafts and conversations are stored locally for the current account and project. Reopen **History** to resume a previous conversation.
 
 ### Connect an external MCP client
 
@@ -64,10 +72,17 @@ The model picker uses the Duckbench Worker catalog. Chat charges the signed-in K
 
 | Tool | What the client can do |
 | --- | --- |
-| `workbench_state` | Inspect the project name, current file, and build or preview status. |
+| `workbench_state` | Inspect the project name, current file, editor selection, unsaved files, and build or preview status. |
 | `build_result` | Inspect the build target, last attempt, project traceback locations and displayed build. |
-| `list_files` | Browse one project directory at a time. |
-| `read_file` | Read project text, including unsaved edits, in chunks using `nextOffset`. |
+| `run_build` | Build the run target, or one Python file, and wait for the result. On desktop it saves changed project files first, as **Run** does. |
+| `read_output` | Read the Output panel, including `print()` output and tracebacks. |
+| `list_files` | Browse one project directory, or every file under it with `recursive`. |
+| `search_files` | Search project text files for a regular expression. |
+| `read_file` | Read project text with line numbers, including unsaved edits. Continue at the line it names with `offset`. |
+| `describe_model` | Measure the displayed model and each labelled part: bounding box, volume, centre of mass, colour and topology counts. |
+| `screenshot` | Return a picture of the 3D preview, optionally after moving the camera to a preset view. |
+| `get_selection` | List the parts the user picked in the preview, newest first. |
+| `build123d_api` | Look up the installed build123d's signatures and docstrings, or search its names. |
 | `propose_edit` | Submit one exact replacement for review in a project file. Duckbench checks that the source still matches when the user clicks Apply. |
 
 Desktop uses a bearer-protected HTTP server on an ephemeral loopback port. The Electron renderer dispatches tool calls against the open folder or the active standalone document. Its OAuth callback also uses loopback, with a separate listener that exists only during sign-in. Desktop account sessions last until the window closes.

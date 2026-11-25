@@ -78,11 +78,124 @@ def export_model(format, build_id=None):
         return base64.b64encode(target.read_bytes()).decode("ascii")
 
 
+def _vector(value, digits=4):
+    return [round(float(c), digits) for c in (value.X, value.Y, value.Z)]
+
+
+def _measure(shape):
+    """Size, position and topology of one shape, in millimetres."""
+    box = shape.bounding_box()
+    info = {
+        "min": _vector(box.min), "max": _vector(box.max), "size": _vector(box.size),
+        "solids": len(shape.solids()), "faces": len(shape.faces()), "edges": len(shape.edges()),
+    }
+    for key, measure in (("volume", lambda: shape.volume), ("area", lambda: shape.area)):
+        try:
+            info[key] = round(float(measure()), 3)
+        except Exception:
+            pass
+    try:
+        if info.get("volume"):
+            info["center_of_mass"] = _vector(shape.center())
+    except Exception:
+        pass
+    return info
+
+
+def describe_model(build_id=None, limit=60):
+    """Describe the displayed model: overall size, then each labelled part of an assembly."""
+    from build123d import Compound
+    shape = _last_result if build_id is None else _preview_results.get(build_id)
+    if shape is None:
+        raise ValueError("No built model to describe. Run the model first.")
+    parts = []
+
+    def walk(node, path):
+        name = node.label or type(node).__name__
+        here = path + "/" + name if path else name
+        children = list(node.children) if isinstance(node, Compound) and node.children else []
+        if children:
+            for child in children:
+                walk(child, here)
+        elif len(parts) < limit:
+            entry = {"path": here, "type": type(node).__name__, **_measure(node)}
+            color = getattr(node, "color", None)
+            if color is not None:
+                entry["color"] = str(color)
+            parts.append(entry)
+
+    walk(shape, "")
+    return {"units": "mm", "overall": {"type": type(shape).__name__, **_measure(shape)},
+            "parts": parts, "truncated": len(parts) >= limit}
+
+
+def _summary(doc):
+    return (doc or "").strip().split("\n\n")[0].replace("\n", " ")[:240]
+
+
+def api_lookup(name=None, search=None):
+    """build123d's real signatures and docstrings, so the agent need not guess."""
+    import inspect
+    import re
+    import build123d
+    public = sorted(n for n in dir(build123d) if not n.startswith("_"))
+    if search:
+        pattern = re.compile(search, re.IGNORECASE)
+        found = []
+        for n in public:
+            obj = getattr(build123d, n)
+            if pattern.search(n) or pattern.search(_summary(getattr(obj, "__doc__", ""))):
+                found.append(n + ": " + _summary(getattr(obj, "__doc__", ""))[:120])
+        return {"version": build123d.__version__, "matches": found[:80], "truncated": len(found) > 80}
+    if not name:
+        return {"version": build123d.__version__, "names": public}
+    obj = build123d
+    if any(part.startswith("_") for part in name.split(".")):
+        raise ValueError("Look up public build123d names only.")
+    for part in name.removeprefix("build123d.").split("."):
+        if not hasattr(obj, part):
+            close = [n for n in public if n.lower().startswith(part.lower()[:3])][:20]
+            raise ValueError(f"build123d has no {name}. Similar names: {', '.join(close) or 'none'}")
+        obj = getattr(obj, part)
+    info = {"name": name, "kind": type(obj).__name__}
+    short = lambda text: re.sub(r"\b(?:[a-z_][a-z0-9_]*\.)+(?=[A-Za-z_])", "", text)
+    for target in ([obj.__init__, obj] if inspect.isclass(obj) else [obj]):
+        try:
+            signature = str(inspect.signature(target))
+        except (TypeError, ValueError):
+            continue
+        if signature != "(*args, **kwargs)":
+            info["signature"] = short(signature.replace("(self, ", "(").replace("(self)", "()"))
+            break
+    doc = inspect.getdoc(obj) or ""
+    info["doc"] = doc[:6000] + ("\n[…cut off]" if len(doc) > 6000 else "")
+    if inspect.isclass(obj):
+        info["bases"] = [b.__name__ for b in obj.__mro__[1:6]]
+        # Its own members described; what it inherits from build123d's base shapes by name only.
+        own = set().union(*(vars(c) for c in obj.__mro__[:2]))
+        members, inherited = [], []
+        for member, value in inspect.getmembers(obj):
+            if member.startswith("_"):
+                continue
+            if member not in own:
+                inherited.append(member)
+                continue
+            kind = "property" if isinstance(inspect.getattr_static(obj, member, None), property) else "method" if callable(value) else "attribute"
+            members.append(f"{member} ({kind}): {_summary(getattr(value, '__doc__', '') if kind != 'attribute' else '')[:100]}")
+        info["members"] = members[:100]
+        info["inherited"] = ", ".join(inherited[:200])
+    return info
+
+
 def dispatch(request):
     if request["method"] == "run":
         return run_model(**request["params"])
     if request["method"] == "export":
         return export_model(**request["params"])
+    if request["method"] == "describe":
+        return describe_model(**request["params"])
+    if request["method"] == "api":
+        return api_lookup(**request["params"])
     raise ValueError("Unknown runner method")
 
 

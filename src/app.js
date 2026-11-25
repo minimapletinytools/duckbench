@@ -78,7 +78,7 @@ if(!documents.has(filename))documents.set(filename,{code:initial,saved:initial})
 const editor=createEditor($('editor'),{value:initial,onChange:()=>{if(changing)return;const doc=documents.get(filename);doc.code=editor.getValue();projectRevision++;sync();},onCursor:position=>{$('position').textContent=`Ln ${position.lineNumber}, Col ${position.column}`;}});
 editor.setFilename(filename);
 const cad=createCadPanel($('cad-view'));
-const feedback=createViewerFeedback(preview,run);
+const feedback=createViewerFeedback(preview,()=>run());
 const exportsBar=document.createElement('div');exportsBar.className='geometry-exports';
 exportsBar.append($('step'),$('stl'),$('export-viewer'));preview.querySelector('.panel-toolbar').after(exportsBar);
 const fileActions=createFileActions({isDiskFile:path=>!!window.desktop&&/^(\/|[A-Za-z]:[\\/])/.test(path),removeFile,onError:error,actions:entry=>{
@@ -172,10 +172,27 @@ if(!window.desktop){
 explorer.querySelector('.panel-toolbar').after(fileCommands);
 const project=agentProject({
  workspace:()=>workspace, documents, filename:()=>filename, desktop:window.desktop,
+ host:{
+  output:()=>$('logs').textContent,
+  selection:()=>({file:project.relative(filename),...editor.selection()}),
+  build:agentBuild,
+  async describe(){
+   if(!hasModel)throw new Error('No model is shown. Build one first (run_build).');
+   if(importedModel)throw new Error('The preview shows '+basename(builtFilename)+', opened from a file rather than built, so it cannot be measured.');
+   return runtime.call('describe',{build_id:lastScene.build});
+  },
+  async screenshot(view){
+   const shot=await cad.screenshot(view);
+   return {image:shot,text:`Screenshot of ${hasModel?basename(builtFilename):'the preview'} (${view} view, ${shot.width}×${shot.height}).`+(stalePreview()?' The code has changed since this model was built.':'')};
+  },
+  picks:limit=>({picks:cad.picks(limit)}),
+  api:args=>{if(!runtime)throw new Error('Python is not available.');return runtime.call('api',args);},
+  write:agentWrite,remove:removeFile,rename:agentRename,
+ },
  preview:()=>({status:$('runtime-status').textContent,runTarget:project.relative(runPath()),lastAttempt:lastAttempt?.target?lastAttempt:null,lastSuccessful:hasModel?project.relative(builtFilename):null,lastSuccessfulId:hasModel&&project.relative(builtFilename)?lastScene.build:null,stale:hasModel&&snapshot()!==builtSnapshot}),
 });
 const agent=createAgentPanel(project,{
- apply:applyProjectEdit,run,runLabel,
+ run,runLabel,
  show:()=>{if($('right-slot').hidden)shell.toggle('right');},
  close:()=>{shell.toggle('right');$('toggle-agent').focus();},
 });
@@ -275,10 +292,11 @@ function buttons(){
  updatePreview();
 }
 function error(error){status('Error: '+(error.message||String(error)).split('\n').filter(Boolean).at(-1));const message=error.message||String(error);$('error-message').textContent=message.split('\n').filter(Boolean).at(-1);$('error-banner').hidden=false;log(message);}
-async function run({saveHelpers=false}={}){
+async function run({saveHelpers=false,target}={}){
+ if(typeof target!=='string')target=undefined;
  if(!runtime||busy||exporting||deleting)return;
- if(!saveHelpers&&dirtyHelpers(runPath()).length&&!window.confirm('Save changed project files to disk and run '+basename(runPath())+'?'))return;
- const token=++generation;const runningFile=runPath();let runningSnapshot;const files={...projectRecord?.modelFiles,...projectFiles()};
+ if(!saveHelpers&&dirtyHelpers(target||runPath()).length&&!window.confirm('Save changed project files to disk and run '+basename(target||runPath())+'?'))return;
+ const token=++generation;const runningFile=target||runPath();const outputStart=$('logs').textContent.length;let runningSnapshot;const files={...projectRecord?.modelFiles,...projectFiles()};
  buildNeedsSetup=runtime.needsSetup;busy=true;status(buildNeedsSetup?'Preparing Python and CAD…':'Building model…');buttons();$('error-banner').hidden=true;log(`› ${runningFile}`);
  shell.activate('preview');
  try{
@@ -299,7 +317,7 @@ async function run({saveHelpers=false}={}){
    if(code===undefined)throw new Error('Choose a new run target. The previous target is unavailable.');
    if(token!==generation)return;
    runningSnapshot=snapshot();
-   lastAttempt={id:token,target:project.relative(runningFile),status:'building'};
+   lastAttempt={id:token,target:project.relative(runningFile),status:'building',outputStart};
    const result=await runtime.run({code,filename:runningFile,files,...(!window.desktop?{folders:[...browserFolders]}:{}),build_id:token,displayed_build:lastScene?.build??null});
    if(token!==generation)return;
    status('Preparing 3D preview…');
@@ -307,11 +325,11 @@ async function run({saveHelpers=false}={}){
    if(token!==generation)return;
    const retained=structuredClone(result.scene);
    cad.render(result.scene);importedModel=false;lastScene={version:1,build:token,name:basename(runningFile),scene:retained};
-   lastAttempt={id:token,target:project.relative(runningFile),status:'success',elapsed:result.elapsed};$('empty-state').hidden=true;hasModel=true;canExport=true;builtFilename=runningFile;
+   lastAttempt={id:token,target:project.relative(runningFile),status:'success',elapsed:result.elapsed,outputStart};$('empty-state').hidden=true;hasModel=true;canExport=true;builtFilename=runningFile;
    builtSnapshot=runningSnapshot;
    $('model-state').textContent='result';$('model-state').title=runningFile;$('elapsed').textContent=result.elapsed.toFixed(2)+'s';status('Ready');log(`Built in ${result.elapsed.toFixed(2)}s`);
  }catch(e){if(token!==generation)return;error(e);
-   lastAttempt={id:token,target:project.relative(runningFile),status:'failed',error:$('error-message').textContent,locations:showTraceback(e.message)};status('Build failed');$('model-state').textContent=hasModel?'Last successful model':'No model yet';}
+   lastAttempt={id:token,target:project.relative(runningFile),status:'failed',error:$('error-message').textContent,locations:showTraceback(e.message),outputStart};status('Build failed');$('model-state').textContent=hasModel?'Last successful model':'No model yet';}
  finally{if(token===generation){busy=false;sync();buttons();}}
 }
 function cancel(){lastAttempt={id:generation,target:project.relative(runPath()),status:'cancelled'};++generation;runtime?.cancel();busy=false;canExport=false;buttons();status('Cancelled');}
@@ -334,20 +352,73 @@ function load(data,{activate=true}={}){
  if(activate)shell.activate('source');saveFolderPrefs();sync();
  if(!workspace)renderTree();
 }
-async function applyProjectEdit(proposal,isCurrent){
- const key=project.key(proposal.path);
- const source=await project.read(proposal.path);
- if(window.desktop&&inWorkspace(key)){
-   const disk=await window.desktop.readProjectText(key);
-   if(disk!==(documents.get(key)?.saved??proposal.source))throw new Error('The file changed on disk. Request a fresh edit.');
+function stalePreview(){return hasModel&&!importedModel&&snapshot()!==builtSnapshot;}
+/** Build for the agent: wait for a build already running, then build and report, giving up waiting after 100 seconds. */
+async function agentBuild(target,{save=true}={}){
+ if(!runtime)throw new Error('Python is not available.');
+ // MCP clients may not write the user's unsaved edits to disk; the built-in agent may, as Apply & Run does.
+ const unsaved=dirtyHelpers(target||runPath());
+ if(!save&&unsaved.length)throw new Error('Building would save unsaved changes to '+unsaved.map(([path])=>project.relative(path)).join(', ')+'. Ask the user to save or run it in Duckbench.');
+ for(let waited=0;(busy||exporting||deleting)&&waited<30000;waited+=200)await new Promise(resolve=>setTimeout(resolve,200));
+ if(busy||exporting||deleting)throw new Error('Duckbench is busy with another build. Try again shortly.');
+ if(target&&window.desktop&&!inWorkspace(target)&&target!==filename)throw new Error('Build a file in the open workspace.');
+ const done=run({saveHelpers:true,target});
+ const slow=new Promise(resolve=>setTimeout(()=>resolve('slow'),100000));
+ if(await Promise.race([done.then(()=>'done'),slow])==='slow')return {...lastAttempt,status:'building'};
+ return lastAttempt;
+}
+/** Create or replace a project file's text for the agent, through its editor buffer. */
+async function agentWrite(path,content){
+ const key=project.key(path);
+ let doc=documents.get(key);
+ if(!doc&&window.desktop){
+  const disk=await window.desktop.readProjectText(key).catch(()=>null);
+  if(disk!==null)documents.set(key,doc={code:disk,saved:disk});
  }
- if(!isCurrent()||project.key(proposal.path)!==key||agent.contextKey()!==proposal.context||source!==proposal.source)throw new Error('File changed. Request a fresh edit.');
+ if(!doc&&!window.desktop&&Object.hasOwn(browserFiles,key))documents.set(key,doc={code:browserFiles[key],saved:browserFiles[key]});
+ if(doc){
+  if(key===filename){
+   // Replace only what differs, so the cursor and undo history stay sensible.
+   const old=doc.code;let start=0,end=0;
+   while(start<old.length&&start<content.length&&old[start]===content[start])start++;
+   while(end<old.length-start&&end<content.length-start&&old[old.length-1-end]===content[content.length-1-end])end++;
+   editor.replaceRange(start,old.length-start-end,content.slice(start,content.length-end));
+  }
+  doc.code=content;
+ }else{
+  if(window.desktop){
+   const folder=path.split('/').slice(0,-1).join('/');
+   if(folder)await window.desktop.createFolder(folder);
+   documents.set(window.desktop?await window.desktop.createProjectFile(path):key,{code:content,saved:''});
+   treeEntries=await window.desktop.listFiles(workspace.root);
+  }else{
+   if([...documents.keys(),...Object.keys(browserFiles),...browserFolders].some(other=>other===key||other.startsWith(key+'/')||key.startsWith(other+'/')&&!browserFolders.has(other)))throw new Error('A file or folder already uses that name.');
+   browserFiles[key]=content;documents.set(key,{code:content,saved:''});treeEntries=browserTree(browserFiles);
+  }
+  for(let parts=path.split('/'),i=1;i<parts.length;i++)expandedFolders.add(window.desktop?project.key(parts.slice(0,i).join('/')):parts.slice(0,i).join('/'));
+  renderTree();
+ }
+ projectRevision++;sync();
+ return key;
+}
+/** Rename or move a project file for the agent, keeping its buffer, tab and run target. */
+async function agentRename(key,to){
+ const target=project.key(to);
+ let next=target;
+ if(window.desktop){
+  next=await window.desktop.renameProjectFile(key,to);
+  treeEntries=await window.desktop.listFiles(workspace.root);
+ }else{
+  if(documents.has(target)||Object.hasOwn(browserFiles,target)||browserFolders.has(target))throw new Error(to+' already exists.');
+  browserFiles[target]=documents.get(key)?.code??browserFiles[key];delete browserFiles[key];
+  treeEntries=browserTree(browserFiles);
+ }
  const doc=documents.get(key);
- if(doc&&doc.code!==source)throw new Error('File changed. Request a fresh edit.');
- if(!doc)documents.set(key,{code:source,saved:source});
- if(key===filename)editor.replaceRange(proposal.start,proposal.original.length,proposal.replacement);
- else documents.get(key).code=source.slice(0,proposal.start)+proposal.replacement+source.slice(proposal.start+proposal.original.length);
- projectRevision++;sync();return key;
+ if(doc){documents.delete(key);documents.set(next,window.desktop?doc:{...doc,saved:''});}
+ if(runTarget===key)runTarget=next;
+ if(filename===key){filename=next;editor.setFilename(filename);saveFolderPrefs();}
+ projectRevision++;renderTree();
+ return next;
 }
 function showTraceback(message){
  const locations=[];

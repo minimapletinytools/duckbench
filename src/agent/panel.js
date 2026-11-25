@@ -1,15 +1,24 @@
 import {createAccount} from './account.js';
 import {createRelay} from './relay.js';
 import {clients, setupText} from './mcp-setup.js';
-import {callTool, instructions, tools} from './tools.js';
+import {callTool, describeBuild, instructions, mcpToolList} from './tools.js';
 import {chat} from './chat.js';
+import {renderMarkdown} from './markdown.js';
 import './panel.css';
 import {conversations} from './conversations.js';
 
-export function createAgentPanel(project, {apply, run, runLabel, show, close}) {
+const MODES = [['ask', 'Ask before edits'], ['auto', 'Edit automatically'], ['plan', 'Plan only (no edits)']];
+const EDIT_TOOLS = new Set(['edit_file', 'write_file', 'rename_file']);
+
+export function createAgentPanel(project, {run, runLabel, show, close}) {
   const element = document.createElement('section');
   element.className = 'agent-panel';
-  element.innerHTML = `<div class="panel-toolbar"><strong>AGENT</strong><span class="panel-spacer"></span><button data-id="past">History</button><button data-id="clear">New chat</button><button data-id="close" type="button" class="agent-close" aria-label="Close agent panel" title="Close agent panel">×</button></div>
+  const icon = path => `<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
+  element.innerHTML = `<header class="agent-header"><span class="agent-title">${icon('<path d="M6 2.5l1.2 3.3 3.3 1.2-3.3 1.2L6 11.5 4.8 8.2 1.5 7l3.3-1.2zM12 9.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z"/>')}Agent</span>
+      <span class="agent-actions"><select data-id="model" class="model-select" aria-label="Agent model" hidden></select>
+      <button data-id="past" type="button" class="icon-btn" aria-label="History" title="History">${icon('<path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9M2.5 2.5v2.2h2.2M8 5v3.2l2 1.3"/>')}</button>
+      <button data-id="clear" type="button" class="icon-btn" aria-label="New chat" title="New chat">${icon('<path d="M8 3v10M3 8h10"/>')}</button>
+      <button data-id="close" type="button" class="icon-btn agent-close" aria-label="Close agent panel" title="Close agent panel">${icon('<path d="M4 4l8 8M12 4l-8 8"/>')}</button></span></header>
     <div data-id="threads" class="agent-history" hidden></div>
     <details class="agent-mcp"><summary>MCP connection<span data-id="indicator"></span></summary>
       <p data-id="scope"></p><label class="mcp-toggle"><input type="checkbox" data-id="connect"> Enable MCP server</label>
@@ -22,20 +31,24 @@ export function createAgentPanel(project, {apply, run, runLabel, show, close}) {
       </div></details>
     <div class="agent-thread">
       <div data-id="welcome" class="agent-welcome">
-        <p><span aria-hidden="true">↑</span> Enable MCP above to connect your own agent.</p>
-        <p>For the best experience, use your own agent. Duckbench also includes a built-in agent with limited tokens.</p>
-        <p data-id="loginHint"><span aria-hidden="true">↓</span> Sign in below to use the built-in agent.</p>
+        <p class="welcome-pointer"><span aria-hidden="true">↑</span> Enable MCP above to connect your own agent.</p>
+        <p class="welcome-note">For the best experience, use your own agent. Duckbench also includes a built-in agent with limited tokens.</p>
+        <p data-id="loginHint" class="welcome-pointer">Sign in below to use the built-in agent. <span aria-hidden="true">↓</span></p>
       </div>
       <div role="log" aria-label="Conversation"></div>
     </div>
-    <section class="agent-proposal" aria-label="Proposed edit" hidden><strong data-id="target"></strong><details open><summary>Review edit</summary><pre class="removed" data-id="original"></pre><pre class="added" data-id="replacement"></pre></details><div><button data-id="apply">Apply edit</button> <button data-id="applyRun">Apply &amp; Run</button> <button data-id="discard">Discard</button></div></section>
-    <form class="agent-compose"><textarea aria-label="Message to agent" rows="3" placeholder="Ask about this project…"></textarea>
-    <div data-id="mentions" class="agent-mentions" hidden></div><div><output data-id="status" role="status"></output><button data-id="send" class="primary" disabled>Send</button><button type="button" data-id="cancel" hidden>Stop</button></div></form>
+    <section class="agent-proposal" aria-label="Proposed edit" hidden><strong data-id="target"></strong><details open><summary data-id="kind">Review edit</summary><pre class="removed" data-id="original"></pre><pre class="added" data-id="replacement"></pre></details><div><button data-id="apply">Apply edit</button> <button data-id="applyRun">Apply &amp; Run</button> <button data-id="discard">Discard</button></div></section>
+    <ol data-id="todos" class="agent-todos" aria-label="Agent to-do list" hidden></ol>
+    <div class="agent-footer"><form class="agent-compose"><div data-id="mentions" class="agent-mentions" hidden></div>
+    <div class="input-box"><textarea aria-label="Message to agent" rows="2" placeholder="Ask about this project, or @ to reference a file"></textarea>
+    <button data-id="send" class="send-btn" aria-label="Send" title="Send (Enter)" disabled>${icon('<path d="M2.5 13.5l11-5.5-11-5.5 1.8 5.5zM4.3 8h5"/>')}</button><button type="button" data-id="cancel" class="send-btn stop-btn" aria-label="Stop" title="Stop" hidden>${icon('<rect x="4.5" y="4.5" width="7" height="7" rx="1" fill="currentColor" stroke="none"/>')}</button></div>
+    <output data-id="status" role="status"></output></form>
+    <div class="agent-options"><select data-id="mode" aria-label="Edit permissions" title="Whether the agent asks before changing files">${MODES.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></div>
     <footer class="agent-account">
-      <button data-id="signIn" aria-haspopup="dialog" aria-controls="agent-sign-in" disabled>Sign in</button>
-      <span data-id="identity" hidden></span><button data-id="logout" hidden>Sign out</button>
-      <div data-id="billing" class="agent-billing" hidden><span data-id="usage"></span><select data-id="model" aria-label="Agent model" hidden></select></div>
-    </footer>
+      <button data-id="signIn" class="link-btn" aria-haspopup="dialog" aria-controls="agent-sign-in" disabled>Sign in</button>
+      <span data-id="identity" hidden></span><button data-id="logout" class="link-btn" hidden>Sign out</button>
+      <div data-id="billing" class="agent-billing" hidden><span data-id="usage"></span></div>
+    </footer></div>
     <dialog id="agent-sign-in" data-id="chooser" class="file-dialog agent-sign-in" aria-labelledby="agent-sign-in-title">
       <h2 id="agent-sign-in-title">Sign in to Duckbench</h2>
       <div data-id="providers">
@@ -50,10 +63,13 @@ export function createAgentPanel(project, {apply, run, runLabel, show, close}) {
   const input = element.querySelector('textarea');
   const desktop = window.desktop;
   let account, relay, user, turn, session, connection, context, signingIn = false;
-  let storage=null,record=null,mentionId=0;
+  let storage=null,record=null,mentionId=0,models=[],turnChanges=null;
   const history=[];
   let usageRequest=0;
   const money=new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:4});
+  try { ui.mode.value = localStorage.getItem('duckbench.agent.mode') || 'ask'; } catch {}
+  if (!ui.mode.value) ui.mode.value = 'ask';
+  ui.mode.onchange = () => { try { localStorage.setItem('duckbench.agent.mode', ui.mode.value); } catch {} };
   async function refreshUsage(){
     const id=++usageRequest;
     if(!user || !account)return;
@@ -68,12 +84,16 @@ export function createAgentPanel(project, {apply, run, runLabel, show, close}) {
   function persist(){
     if(!storage||!record)return;
     record.history=history.slice();record.draft=input.value;
-    try{storage.save(record);}catch{ui.status.textContent='Conversation storage is full or unavailable.';}
+    try{storage.save(record);}catch{
+      // Keep the visible transcript; drop the oldest model context first.
+      try{record.history=history.slice(-20);storage.save(record);}catch{ui.status.textContent='Conversation storage is full or unavailable.';}
+    }
   }
   function restore(next) {
     clearChat();record=next;if(!next)return;
     history.push(...next.history);input.value=next.draft;
-    for(const item of next.transcript)message(item.label,item.text,false);
+    for(const item of next.transcript)message(item.label,item.text,false,item);
+    showTodos(next.todos||[]);
     if([...ui.model.options].some(option=>option.value===next.model))ui.model.value=next.model;
     controls();
   }
@@ -94,7 +114,7 @@ export function createAgentPanel(project, {apply, run, runLabel, show, close}) {
     const owner=user?.id;
     if(!owner||!account){ui.model.hidden=true;return;}
     try{
-      const {models}=await account.request('/models');
+      ({models}=await account.request('/models'));
       if(user?.id!==owner)return;
       ui.model.replaceChildren(...models.map(model=>new Option(model.label,model.openrouter)));
       if(models.some(model=>model.openrouter===record?.model))ui.model.value=record.model;
@@ -107,51 +127,130 @@ export function createAgentPanel(project, {apply, run, runLabel, show, close}) {
     if(ui.threads.hidden)return;
     persist();ui.threads.replaceChildren();
     for(const entry of storage?.list()||[]){
-      const button=document.createElement('button');button.textContent=entry.history[0]?.content?.slice(0,70)||entry.draft.slice(0,70)||'New conversation';
+      const button=document.createElement('button');
+      button.textContent=entry.transcript.find(item=>item.label==='You')?.text?.slice(0,70)||entry.draft.slice(0,70)||'New conversation';
       button.onclick=()=>{restore(entry);persist();ui.threads.hidden=true;};ui.threads.append(button);
     }
     if(!ui.threads.childElementCount)ui.threads.textContent='No saved conversations.';
   };
+
+  // Review: one change at a time, from the built-in agent (which waits) or an MCP client (which doesn't).
   const review = element.querySelector('.agent-proposal');
-  let proposal;
-  function discard() {
-    proposal = null;
+  let pending = null;
+  function hideReview() {
+    pending = null;
     review.hidden = true;
     ui.original.textContent = ui.replacement.textContent = ui.target.textContent = '';
   }
+  const lines = (text, mark) => {
+    const shown = text.length > 6000 ? text.slice(0, 6000) + '\n…' : text;
+    return shown.split('\n').map(line => mark + ' ' + line).join('\n');
+  };
+  function ask(change) {
+    if (pending) throw new Error('An edit is already awaiting review.');
+    const {kind, path} = change;
+    ui.target.textContent = kind === 'rename' ? path + ' → ' + change.to : path;
+    ui.kind.textContent = {edit: 'Review edit', write: change.source === null ? 'Review new file' : 'Review rewrite',
+      delete: 'Review deletion', rename: 'Review rename'}[kind];
+    ui.original.hidden = !(kind === 'edit' || kind === 'delete' || kind === 'write' && change.source);
+    ui.replacement.hidden = !(kind === 'edit' || kind === 'write');
+    let removed = change.original, added = change.replacement;
+    if (kind === 'edit' && change.count === 1 && change.original) {
+      // Whole lines around a single replacement, so it reads in context.
+      const start = change.source.indexOf(change.original);
+      const from = change.source.lastIndexOf('\n', start - 1) + 1;
+      let to = change.source.indexOf('\n', start + change.original.length);
+      if (to < 0) to = change.source.length;
+      removed = change.source.slice(from, to);
+      added = change.source.slice(from, start) + change.replacement + change.source.slice(start + change.original.length, to);
+    }
+    ui.original.textContent = kind === 'edit' ? lines(removed, '−') : change.source ? lines(change.source, '−') : '';
+    ui.replacement.textContent = kind === 'edit' ? lines(added, '+') : kind === 'write' ? lines(change.next, '+') : '';
+    ui.apply.textContent = kind === 'delete' ? 'Delete file' : kind === 'rename' ? 'Rename file' : 'Apply edit';
+    const target = project.state().preview.runTarget;
+    ui.applyRun.hidden = kind === 'delete' || kind === 'rename';
+    ui.applyRun.textContent = 'Apply & ' + (desktop && path !== target ? 'Save changed files & Run ' + (target || 'model') : runLabel());
+    review.hidden = false;
+    show();
+    return new Promise(resolve => { pending = {change, resolve}; });
+  }
+  function decide(decision) {
+    const current = pending;
+    if (!current) return;
+    hideReview();
+    current.resolve(decision);
+  }
+  ui.apply.onclick = () => decide('apply');
+  ui.applyRun.onclick = () => decide('applyRun');
+  ui.discard.onclick = () => decide('discard');
+
+  /** Keep each file as it was before this turn first changed it, for Undo. */
+  function checkpoint(change) {
+    if (!turnChanges) return;
+    if (!turnChanges.has(change.path)) turnChanges.set(change.path, change.source);
+    if (change.kind === 'rename' && !turnChanges.has(change.to)) turnChanges.set(change.to, null);
+  }
+  const done = change => ({edit: `Edited ${change.path} (${change.count} replacement${change.count > 1 ? 's' : ''}).`,
+    write: (change.source === null ? 'Created ' : 'Rewrote ') + change.path + '.', delete: 'Deleted ' + change.path + '.',
+    rename: `Renamed ${change.path} to ${change.to}.`})[change.kind];
+
+  // The built-in agent's edits: refused in plan mode, reviewed in ask mode, then applied and built.
+  project.change = async change => {
+    if (ui.mode.value === 'plan') throw new Error('Plan mode is on, so files are not changed. Propose the change; the user will switch plan mode off and ask you to go ahead.');
+    const decision = ui.mode.value === 'auto' ? 'apply' : await ask(change);
+    if (decision === 'discard') {
+      message('Review', 'Declined change to ' + change.path);
+      throw new Error('The user declined this change. Ask what they would like instead.');
+    }
+    checkpoint(change);
+    await project.apply(change);
+    message('Review', done(change));
+    let text = done(change);
+    const python = [change.path, change.to].some(path => path?.endsWith('.py'));
+    if (python && (decision === 'applyRun' || project.state().preview.lastAttempt)) {
+      ui.status.textContent = 'Building…';
+      const attempt = await project.build();
+      text += '\n' + describeBuild(attempt, attempt?.status === 'failed' ? project.output(attempt.outputStart) : '');
+    } else if (python) text += ' The model has not been built yet: run_build builds it.';
+    return text;
+  };
+  // MCP clients' proposals: shown for review; the tool returns at once.
   project.propose = async ({path, original, replacement}) => {
-    if (proposal) throw new Error('An edit is already awaiting review.');
+    if (pending) throw new Error('An edit is already awaiting review.');
     const owner=user?.id,scope=context;
     const source=await project.read(path);
-    if(context!==scope||owner!==user?.id||proposal)throw new Error('Project or review changed.');
+    if(context!==scope||owner!==user?.id||pending)throw new Error('Project or review changed.');
     const start = source.indexOf(original);
     const unique = original ? start >= 0 && source.lastIndexOf(original) === start : source.length === 0;
     if (!unique || original === replacement) {
       throw new Error('Original text must match exactly once and the replacement must change it.');
     }
-    proposal = {source, path, start, original, replacement, context};
-    ui.target.textContent = path;
-    ui.original.textContent = original.split('\n').map(line=>'− '+line).join('\n');
-    ui.replacement.textContent = replacement.split('\n').map(line=>'+ '+line).join('\n');
-    ui.applyRun.textContent='Apply & '+(desktop && path!==project.state().preview.runTarget?'Save changed files & Run '+(project.state().preview.runTarget||'model'):runLabel());
-    review.hidden = false;
-    show();
+    const change = {kind: 'edit', path, source, original, replacement, count: 1,
+      next: source.slice(0, start) + replacement + source.slice(start + original.length)};
+    void ask(change).then(async decision => {
+      if (decision === 'discard') { message('Review', 'Discarded edit to ' + path); return; }
+      if (context !== scope) return;
+      ui.apply.disabled = ui.applyRun.disabled = ui.discard.disabled = true;
+      try {
+        await project.apply(change);
+        message('Review', 'Applied edit to ' + path);
+        ui.status.textContent = 'Applied to ' + path;
+        if (decision === 'applyRun') await run({saveHelpers: true});
+      } catch (error) { ui.status.textContent = error.message; }
+      finally { ui.apply.disabled = ui.applyRun.disabled = ui.discard.disabled = false; }
+    });
     return {status: 'Awaiting user review', path};
   };
-  ui.discard.onclick = () => {message('Review','Discarded edit to '+proposal.path);discard();};
-  async function accept(build){
-    const edit=proposal;if(!edit)return;
-    ui.apply.disabled=ui.applyRun.disabled=ui.discard.disabled=true;
-    try{
-      await apply(edit, () => proposal === edit);
-      if(proposal!==edit)return;
-      discard();message('Review','Applied edit to '+edit.path);
-      ui.status.textContent='Applied to '+edit.path;
-      if(build)await run({saveHelpers:true});
-    }catch(error){if(proposal===edit){ui.status.textContent=error.message;discard();}}
-    finally{ui.apply.disabled=ui.applyRun.disabled=ui.discard.disabled=false;}
+  project.todos = items => { showTodos(items); if (record) { record.todos = items; persist(); } };
+  function showTodos(items) {
+    ui.todos.replaceChildren(...items.map(item => {
+      const li = document.createElement('li');
+      li.textContent = item.text;
+      li.classList.toggle('is-done', item.done);
+      return li;
+    }));
+    ui.todos.hidden = !items.length;
   }
-  ui.apply.onclick=()=>accept(false);ui.applyRun.onclick=()=>accept(true);
 
   function controls() {
     ui.identity.textContent = user?.email || 'Signed in';
@@ -191,28 +290,37 @@ export function createAgentPanel(project, {apply, run, runLabel, show, close}) {
     turn = null;
     history.length = 0;
     mentionId++;
-    discard();
+    pending?.resolve('discard');
+    hideReview();
+    showTodos([]);
     thread.replaceChildren();ui.threads.hidden=ui.mentions.hidden=true;
     input.value = '';
     ui.status.textContent = '';
     controls();
   }
   function reset() { stop(); clearChat(); }
-  function message(label, text, save=true) {
-    if(save&&record){record.transcript.push({label,text});persist();}
+
+  /** Add one entry to the conversation: the user's bubble, a reply, a tool chip or a note. */
+  function message(label, text, save=true, extra={}) {
+    if(save&&record){record.transcript.push({label,text,...extra});persist();}
     const item = document.createElement('article');
+    item.className = {You:'message-bubble user',Duckbench:'message-bubble assistant',Tool:'tool-chip'}[label] || 'agent-note';
+    if (label === 'Tool') item.classList.add(extra.error ? 'is-error' : 'is-done');
     const from = document.createElement('strong');
+    from.className = 'visually-hidden';
     from.textContent = label;
-    const body = document.createElement('p');
-    body.textContent = text;
-    item.append(from, body);
+    item.append(from);
+    if (label === 'Duckbench') item.append(renderMarkdown(text));
+    else { const body = document.createElement('p'); body.textContent = text; item.append(body); }
     ui.welcome.hidden=true;
     thread.append(item);
     item.scrollIntoView({block: 'nearest'});
+    return item;
   }
+
   desktop?.onMcpCall(async ({scope, id, method, params}) => {
     if (scope !== connection) return;
-    const result = method === 'tools/list' ? {tools} : await callTool(project, params.name, params.arguments);
+    const result = method === 'tools/list' ? {tools: mcpToolList} : await callTool(project, params.name, params.arguments);
     if (scope === connection) await desktop.replyMcp(id, result);
   });
   ui.connect.onchange = async () => {
@@ -295,8 +403,63 @@ export function createAgentPanel(project, {apply, run, runLabel, show, close}) {
       button.onclick=()=>{const pos=input.selectionStart;input.setRangeText(e.directory?'@'+path+'/':'@'+JSON.stringify(path)+' ',pos-match[1].length-1,pos,'end');input.focus();input.oninput();};return button;
     }));ui.mentions.hidden=!choices.length;
   }
-  ui.cancel.onclick = () => { turn?.abort(); };
+  ui.cancel.onclick = () => { turn?.abort(); pending?.resolve('discard'); hideReview(); };
   input.oninput = () => {controls();persist();void suggest().catch(()=>{});};
+
+  /** What the user is looking at, sent with each message. */
+  function contextNote() {
+    const {activeFile, editor, unsaved, preview} = project.state();
+    const parts = [];
+    if (activeFile) parts.push(`The active file is ${activeFile}` + (editor?.line ? `, cursor at line ${editor.line}` : '') + '.');
+    if (editor?.selectedText) parts.push(`Selected in the editor (lines ${editor.selectedLines.join('–')}):\n${editor.selectedText}`);
+    if (unsaved?.length) parts.push('Unsaved changes in: ' + unsaved.slice(0, 10).join(', ') + '.');
+    if (preview?.runTarget) parts.push(`The run target is ${preview.runTarget}.`);
+    const attempt = preview?.lastAttempt;
+    if (attempt) parts.push(attempt.status === 'failed' ? `The last build of ${attempt.target} failed: ${attempt.error}` : `The last build of ${attempt.target}: ${attempt.status}.`);
+    else parts.push('Nothing has been built yet.');
+    if (preview?.stale) parts.push('The code has changed since the model on screen was built.');
+    const pick = project.picks(1).picks?.[0];
+    if (pick) parts.push(`Last picked in the 3D preview: ${pick.name} (${pick.path}).`);
+    return parts.join(' ').slice(0, 2400);
+  }
+  /** Files changed in this conversation, as they are now, for a summary. */
+  async function changedFiles() {
+    const paths = new Set();
+    for (const entry of history) for (const call of entry.tool_calls || []) {
+      if (!EDIT_TOOLS.has(call.function.name)) continue;
+      try { const args = JSON.parse(call.function.arguments); paths.add(args.new_path || args.path); } catch {}
+    }
+    const shown = [];
+    let total = 0;
+    for (const path of paths) {
+      const text = await project.read(path).catch(() => null);
+      if (text === null || total > 60000) continue;
+      const cut = text.length > 20000 ? text.slice(0, 20000) + '\n[…cut off]' : text;
+      total += cut.length;
+      shown.push(`[The file ${path} as it is now]\n\`\`\`\n${cut}\n\`\`\``);
+    }
+    return shown.length ? '[Files changed so far, as they are now. Where the summary disagrees, these are right.]\n\n' + shown.join('\n\n') : '';
+  }
+  function offerUndo(changes) {
+    const note = message('Note', `Changed ${changes.size} file${changes.size > 1 ? 's' : ''} this turn.`, false);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = 'Undo these changes';
+    button.onclick = async () => {
+      button.disabled = true;
+      try {
+        for (const [path, before] of [...changes].reverse()) await project.restore(path, before);
+        note.querySelector('p').textContent = 'Undid the changes to ' + [...changes.keys()].join(', ') + '.';
+        message('Review', 'Undid the agent\'s last changes.');
+        history.push({role: 'user', content: '[Duckbench note: the user undid your last changes to ' + [...changes.keys()].join(', ') + '.]'},
+          {role: 'assistant', content: 'Noted: those changes were undone.'});
+        persist();
+        button.remove();
+      } catch (error) { ui.status.textContent = error.message; button.disabled = false; }
+    };
+    note.append(button);
+  }
+
   element.querySelector('form').onsubmit = async event => {
     event.preventDefault();
     const prompt = input.value.trim();
@@ -306,21 +469,66 @@ export function createAgentPanel(project, {apply, run, runLabel, show, close}) {
       return;
     }
     const active = turn = new AbortController();
+    const changes = turnChanges = new Map();
     input.value = '';ui.mentions.hidden=true;
     controls();
     message('You', prompt);
     ui.status.textContent = 'Thinking…';
+    const chips = new Map();
+    let bubble = null, step = -1, text = '', frame = 0;
+    const draw = () => { frame = 0; if (bubble) bubble.querySelector('.reply').replaceChildren(renderMarkdown(text)); };
+    function settle() {
+      if (!bubble) return;
+      cancelAnimationFrame(frame); draw();
+      if (record && text.trim()) { record.transcript.push({label: 'Duckbench', text}); persist(); }
+      bubble = null;
+    }
     try {
-      const reply = await chat({request: account.request, project, history, prompt, signal: active.signal,
-        model:ui.model.value,onTool: (name,path) => { ui.status.textContent = 'Using ' + name + '…';message('Tool',name+(path?' · '+path:'')); }});
+      await chat({request: account.request, project, history, prompt, signal: active.signal, context: contextNote(),
+        model: models.find(model => model.openrouter === ui.model.value), plan: ui.mode.value === 'plan', changed: changedFiles,
+        onText: (delta, at) => {
+          if (at !== step) { settle(); step = at; text = ''; }
+          if (!bubble) {
+            bubble = document.createElement('article');
+            bubble.className = 'message-bubble assistant is-streaming';
+            bubble.innerHTML = '<strong class="visually-hidden">Duckbench</strong><div class="reply"></div>';
+            thread.append(bubble); ui.welcome.hidden = true;
+          }
+          text += delta;
+          frame ||= requestAnimationFrame(draw);
+          ui.status.textContent = 'Writing…';
+          bubble.scrollIntoView({block: 'nearest'});
+        },
+        onTool: (id, name, args) => {
+          settle();
+          const detail = args?.path || args?.pattern || args?.name || args?.search || args?.view || '';
+          const chip = message('Tool', name + (detail ? ' · ' + detail : ''), false);
+          chip.classList.replace('is-done', 'is-running');
+          chips.set(id, chip);
+          ui.status.textContent = 'Using ' + name + '…';
+        },
+        onToolDone: (id, result) => {
+          const chip = chips.get(id);
+          if (!chip) return;
+          const summary = result.content.filter(part => part.type === 'text').map(part => part.text).join('\n');
+          chip.classList.replace('is-running', result.isError ? 'is-error' : 'is-done');
+          chip.title = summary.slice(0, 600);
+          if (record) { record.transcript.push({label: 'Tool', text: chip.querySelector('p').textContent, ...(result.isError ? {error: true} : {})}); persist(); }
+          ui.status.textContent = 'Thinking…';
+        },
+        onNote: text => message('Note', text),
+      });
       active.signal.throwIfAborted();
-      history.push({role: 'user', content: prompt}, {role: 'assistant', content: reply});
-      message('Duckbench', reply);
+      settle();
       ui.status.textContent = '';
     } catch (error) {
+      settle();
+      for (const chip of chips.values()) chip.classList.replace('is-running', 'is-error');
       if (turn === active) ui.status.textContent = active.signal.aborted ? 'Stopped' : error.message;
     } finally {
-      if (turn === active) { turn = null; controls(); void refreshUsage(); }
+      if (turnChanges === changes) turnChanges = null;
+      if (changes.size) offerUndo(changes);
+      if (turn === active) { turn = null; controls(); persist(); void refreshUsage(); }
     }
   };
   input.onkeydown = event => {
