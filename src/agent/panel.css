@@ -1,58 +1,112 @@
-.agent-panel { background:var(--ka-bg); }
-.agent-account,.agent-mcp,.agent-compose { padding:10px 12px; border-bottom:1px solid var(--ka-border); }
-.agent-account { border-top:1px solid var(--ka-border);border-bottom:0;display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; font-size:12px; }
-.agent-account [data-id="identity"] { overflow-wrap:anywhere; }
-.agent-sign-in { width:min(300px,calc(100vw - 32px)); }
-.agent-sign-in [data-id="providers"] { display:grid; gap:8px; margin:16px 0; }
-.agent-sign-in [data-provider] { min-height:36px; background:var(--ka-chrome-bg); }
-.agent-mcp { font-size:12px; }
-.agent-mcp summary { cursor:pointer; font-weight:550; }
+/* The agent panel, after Kigumi's (kumiki/kigumi/webview/agent/agent.css). */
+.agent-panel { background:var(--ka-bg); min-width:0; }
+.visually-hidden { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+
+/* Header: title on the left; model, history, new chat and close on the right. */
+.agent-header { display:flex; align-items:center; justify-content:space-between; gap:8px; height:35px; padding:0 8px 0 12px; flex:none;
+  background:var(--ka-chrome-bg); border-bottom:1px solid var(--ka-border); }
+.agent-title { display:flex; align-items:center; gap:6px; font-weight:600; white-space:nowrap; }
+.agent-title svg { color:var(--ka-accent); }
+.agent-actions { display:flex; align-items:center; gap:2px; min-width:0; }
+.icon-btn { flex:none; width:26px; height:26px; padding:0; border:0; border-radius:4px; color:var(--ka-muted); }
+.icon-btn:hover:not(:disabled) { color:var(--ka-fg); }
+.model-select { flex:0 1 auto; min-width:60px; max-width:160px; margin-right:4px; padding:2px 4px; font:inherit; font-size:12px; font-weight:600;
+  color:var(--ka-fg); background:var(--ka-bg); border:1px solid var(--ka-border); border-radius:4px; }
+
+.agent-history,.agent-mentions { max-height:150px; overflow:auto; padding:4px; flex:none; border-bottom:1px solid var(--ka-border); background:var(--ka-chrome-bg); font-size:12px; color:var(--ka-muted); }
+.agent-history button,.agent-mentions button { display:block; width:100%; max-width:100%; overflow:hidden; text-overflow:ellipsis; text-align:left; justify-content:flex-start; border:0; padding:5px 8px; }
+.agent-mentions { border:1px solid var(--ka-border); border-radius:6px; margin-bottom:6px; background:var(--ka-bg); }
+
+/* MCP: a collapsible settings row with a chevron, like Kigumi's "Agent Settings and MCP". */
+.agent-mcp { flex:none; max-height:32%; overflow:auto; font-size:12px; border-bottom:1px solid var(--ka-border); }
+.agent-mcp summary { display:flex; align-items:center; gap:6px; padding:6px 12px; cursor:pointer; list-style:none; color:var(--ka-muted); }
+.agent-mcp summary::-webkit-details-marker { display:none; }
+.agent-mcp summary::before { content:'›'; width:9px; font-size:15px; line-height:1; transition:transform .1s; }
+.agent-mcp[open] summary::before { transform:rotate(90deg); }
+.agent-mcp summary:hover { color:var(--ka-fg); background:var(--ka-hover); }
+.agent-mcp [data-id="indicator"] { color:var(--ka-accent); }
+.agent-mcp[open] { padding-bottom:10px; }
+.agent-mcp[open]>:not(summary) { margin-left:12px; margin-right:12px; }
 .agent-mcp p,.agent-panel output { color:var(--ka-muted); line-height:1.5; font-size:12px; }
 .agent-mcp output { display:block; margin-top:5px; }
-.agent-thread { flex:1; min-height:0; overflow:auto; padding:0 12px; }
-.agent-thread article { padding:12px 0; border-bottom:1px solid var(--ka-border); }
-.agent-thread strong { font-size:11px; color:var(--ka-muted); }
-.agent-thread p { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.55; margin:5px 0 0; }
-.agent-compose { border-top:1px solid var(--ka-border); border-bottom:0; }
-.agent-compose textarea,.explorer-search { background:var(--ka-bg); color:var(--ka-fg); border:1px solid var(--ka-border); border-radius:4px; padding:7px; font:inherit; }
-.agent-compose textarea { width:100%; resize:vertical; max-height:30vh; }
-.agent-compose>div { display:flex; align-items:center; gap:8px; margin-top:6px; }
-.agent-compose output { flex:1; overflow-wrap:anywhere; }
-.explorer-search { margin:6px 10px; min-width:0; font-size:12px; }
-#toggle-agent.is-active { background:var(--ka-selected); }
-@media (max-width:760px) {
-  .slot-right { position:fixed; z-index:15; inset:39px 0 24px auto; width:min(360px,100%); box-shadow:-4px 0 15px #0002; }
-  #splitter-right { display:none; }
-}
-.agent-proposal { padding:10px 12px; border-top:1px solid var(--ka-border); max-height:36%; overflow:auto; }
-.agent-proposal summary { font-size:12px; margin:6px 0; cursor:pointer; }
-.agent-proposal small { color:var(--ka-muted); }
-.agent-proposal pre { background:var(--ka-chrome-bg); padding:6px; margin:3px 0 8px; white-space:pre-wrap; overflow-wrap:anywhere; font:12px var(--ka-mono); }
-.agent-panel select{font:inherit;max-width:38%;min-width:0;color:inherit;background:var(--ka-bg);border:1px solid var(--ka-border)}.agent-history,.agent-mentions{max-height:150px;overflow:auto;padding:5px}.agent-history button,.agent-mentions button{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis}.agent-proposal .added{background:#e3f2e8;color:#174529}.agent-proposal .removed{background:#f7e9e8;color:#742f2b}.agent-proposal>div{display:flex;gap:4px;flex-wrap:wrap}
-
-.agent-panel>.panel-toolbar { flex-shrink:0; }
-.agent-panel .agent-close { flex:none; width:26px; height:26px; padding:0; font-size:18px; }
-.agent-mcp { flex:none; max-height:32%; overflow:auto; }
-.agent-welcome { margin:auto 0; padding:18px 4px; font-size:13px; }
-.agent-welcome p { margin:0; }
-.agent-welcome p+p { margin-top:12px; }
-.agent-welcome p:first-child,.agent-welcome p:last-child { color:var(--ka-muted); }
-.agent-welcome span { color:var(--ka-accent); margin-right:3px; }
-.agent-thread { display:flex; flex-direction:column; }
-.agent-billing { display:flex; width:100%; flex-wrap:wrap; align-items:center; gap:5px 10px; color:var(--ka-muted); font-size:11px; }
-.agent-billing select { margin-left:auto; max-width:100%; }
-.agent-account { background:var(--ka-chrome-bg); }
-.agent-account [data-id="logout"] { margin-left:auto; }
-@media (max-height:520px) {
-  .agent-panel { overflow-y:auto; }
-  .agent-thread { min-height:7em; }
-  .agent-compose textarea { max-height:14vh; }
-}
-
 .mcp-toggle { display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
 .mcp-toggle input { margin:0; accent-color:var(--ka-accent); }
 .agent-mcp [data-id="setups"] { margin-top:8px; }
 .agent-mcp [data-id="setups"] p { margin:8px 0 4px; }
 .mcp-clients { display:flex; flex-wrap:wrap; gap:4px; }
-.mcp-clients button { padding:3px 7px; }
+.mcp-clients button { padding:3px 7px; border-radius:4px; }
 .mcp-copy-hint:not(:empty) { padding-left:8px; border-left:2px solid var(--ka-accent); color:var(--ka-fg); }
+
+/* Conversation: the user's messages in accent bubbles on the right, replies in quiet bubbles, tools as chips. */
+.agent-thread { flex:1; min-height:0; overflow:auto; overflow-wrap:anywhere; padding:12px; display:flex; flex-direction:column; }
+.agent-thread [role="log"] { display:flex; flex-direction:column; gap:10px; }
+.agent-thread article p { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.45; }
+.message-bubble { max-width:90%; padding:8px 12px; border-radius:8px; }
+.message-bubble.user { align-self:flex-end; background:var(--ka-accent); color:#fff; }
+.message-bubble.assistant { align-self:flex-start; background:var(--ka-chrome-bg); border:1px solid var(--ka-border); }
+.tool-chip { align-self:flex-start; max-width:100%; padding:3px 9px; border:1px solid var(--ka-border); border-radius:10px;
+  background:var(--ka-chrome-bg); color:var(--ka-muted); font-size:12px; }
+.tool-chip p::before { content:'✓ '; color:var(--ka-accent); }
+.tool-chip p { font-family:var(--ka-mono); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.agent-note { align-self:center; color:var(--ka-muted); font-style:italic; font-size:12px; }
+
+/* Welcome: centred, with bold arrows to the MCP row above and sign-in below. */
+.agent-welcome { margin:auto 0; padding:24px 12px; text-align:center; color:var(--ka-muted); }
+.agent-welcome p { margin:0; line-height:1.5; }
+.agent-welcome p+p { margin-top:14px; }
+.welcome-pointer { color:var(--ka-fg); font-weight:600; }
+.welcome-pointer span { color:var(--ka-fg); margin:0 3px; }
+.welcome-note { font-size:12px; }
+
+/* Proposed edit: a card with the diff, bordered like Kigumi's permission card. */
+.agent-proposal { flex:none; max-height:36%; overflow:auto; margin:0 12px 10px; padding:8px 10px; border:1px solid var(--ka-warning,#b27c00); border-radius:6px; background:var(--ka-chrome-bg); }
+.agent-proposal>strong { font-family:var(--ka-mono); font-size:12px; overflow-wrap:anywhere; }
+.agent-proposal summary { font-size:12px; margin:6px 0; cursor:pointer; color:var(--ka-muted); }
+.agent-proposal pre { margin:3px 0 8px; padding:6px; max-height:160px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:11px var(--ka-mono); border-radius:4px; }
+.agent-proposal .added { background:#e3f2e8; color:#174529; }
+.agent-proposal .removed { background:#f7e9e8; color:#742f2b; }
+.agent-proposal>div { display:flex; gap:6px; flex-wrap:wrap; }
+.agent-proposal>div button { border-radius:4px; padding:3px 10px; background:var(--ka-bg); }
+.agent-proposal [data-id="apply"] { background:var(--ka-accent); border-color:var(--ka-accent); color:#fff; }
+.agent-proposal [data-id="apply"]:hover:not(:disabled) { background:#00539e; }
+
+/* Footer: the composer, set apart by an accent border, then the account line. */
+.agent-footer { flex:none; padding:10px 12px; border-top:1px solid var(--ka-border); background:var(--ka-chrome-bg); }
+.input-box { display:flex; align-items:flex-end; gap:6px; padding:8px 10px; background:var(--ka-bg); border-radius:8px;
+  border:1.5px solid color-mix(in srgb,var(--ka-accent) 55%,var(--ka-border)); box-shadow:0 1px 4px var(--ka-shadow,rgba(0,0,0,.15)); }
+.input-box:focus-within { border-color:var(--ka-accent); }
+.input-box textarea { flex:1; min-width:0; min-height:2.6em; max-height:30vh; resize:vertical; border:0; outline:none; background:transparent; color:var(--ka-fg); font:inherit; font-size:13px; padding:0; }
+.input-box textarea::placeholder { color:var(--ka-muted); }
+.send-btn { flex:none; width:26px; height:26px; padding:0; border:0; border-radius:4px; background:var(--ka-accent); color:#fff; }
+.send-btn:hover:not(:disabled) { background:#00539e; }
+.send-btn:disabled { opacity:.35; }
+.stop-btn { background:var(--ka-fg); color:var(--ka-bg); }
+.agent-compose>output { display:block; margin-top:4px; min-height:0; overflow-wrap:anywhere; }
+.agent-compose>output:empty { display:none; }
+.agent-account { display:flex; flex-wrap:wrap; gap:2px 8px; align-items:center; margin-top:6px; font-size:11px; color:var(--ka-muted); }
+.agent-account [data-id="identity"] { overflow-wrap:anywhere; }
+.agent-account [data-id="logout"] { margin-left:auto; }
+.link-btn { border:0; padding:0; background:none; color:var(--ka-accent); font-size:11px; }
+.link-btn:hover:not(:disabled) { background:none; text-decoration:underline; }
+.agent-billing { display:flex; width:100%; flex-wrap:wrap; align-items:center; gap:5px 10px; }
+
+.agent-sign-in { width:min(300px,calc(100vw - 32px)); }
+.agent-sign-in [data-id="providers"] { display:grid; gap:8px; margin:16px 0; }
+.agent-sign-in [data-provider] { min-height:36px; background:var(--ka-chrome-bg); border-radius:6px; }
+
+.explorer-search { background:var(--ka-bg); color:var(--ka-fg); border:1px solid var(--ka-border); border-radius:4px; padding:7px; font:inherit; margin:6px 10px; min-width:0; font-size:12px; }
+#toggle-agent.is-active { background:var(--ka-selected); }
+@media (max-width:760px) {
+  .slot-right { position:fixed; z-index:15; inset:39px 0 24px auto; width:min(360px,100%); box-shadow:-4px 0 15px #0002; }
+  #splitter-right { display:none; }
+}
+@media (max-height:520px) {
+  .agent-panel { overflow-y:auto; }
+  .agent-thread { min-height:7em; }
+  .input-box textarea { max-height:14vh; }
+}
+@media (prefers-color-scheme:dark) {
+  .agent-proposal .added { background:#1e3a28; color:#b5e3c3; }
+  .agent-proposal .removed { background:#3d2222; color:#f2bcb7; }
+  .send-btn:hover:not(:disabled),.agent-proposal [data-id="apply"]:hover:not(:disabled) { background:#086bbb; }
+}

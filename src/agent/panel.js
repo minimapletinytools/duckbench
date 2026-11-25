@@ -9,7 +9,12 @@ import {conversations} from './conversations.js';
 export function createAgentPanel(project, {apply, run, runLabel, show, close}) {
   const element = document.createElement('section');
   element.className = 'agent-panel';
-  element.innerHTML = `<div class="panel-toolbar"><strong>AGENT</strong><span class="panel-spacer"></span><button data-id="past">History</button><button data-id="clear">New chat</button><button data-id="close" type="button" class="agent-close" aria-label="Close agent panel" title="Close agent panel">×</button></div>
+  const icon = path => `<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
+  element.innerHTML = `<header class="agent-header"><span class="agent-title">${icon('<path d="M6 2.5l1.2 3.3 3.3 1.2-3.3 1.2L6 11.5 4.8 8.2 1.5 7l3.3-1.2zM12 9.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z"/>')}Agent</span>
+      <span class="agent-actions"><select data-id="model" class="model-select" aria-label="Agent model" hidden></select>
+      <button data-id="past" type="button" class="icon-btn" aria-label="History" title="History">${icon('<path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9M2.5 2.5v2.2h2.2M8 5v3.2l2 1.3"/>')}</button>
+      <button data-id="clear" type="button" class="icon-btn" aria-label="New chat" title="New chat">${icon('<path d="M8 3v10M3 8h10"/>')}</button>
+      <button data-id="close" type="button" class="icon-btn agent-close" aria-label="Close agent panel" title="Close agent panel">${icon('<path d="M4 4l8 8M12 4l-8 8"/>')}</button></span></header>
     <div data-id="threads" class="agent-history" hidden></div>
     <details class="agent-mcp"><summary>MCP connection<span data-id="indicator"></span></summary>
       <p data-id="scope"></p><label class="mcp-toggle"><input type="checkbox" data-id="connect"> Enable MCP server</label>
@@ -22,20 +27,22 @@ export function createAgentPanel(project, {apply, run, runLabel, show, close}) {
       </div></details>
     <div class="agent-thread">
       <div data-id="welcome" class="agent-welcome">
-        <p><span aria-hidden="true">↑</span> Enable MCP above to connect your own agent.</p>
-        <p>For the best experience, use your own agent. Duckbench also includes a built-in agent with limited tokens.</p>
-        <p data-id="loginHint"><span aria-hidden="true">↓</span> Sign in below to use the built-in agent.</p>
+        <p class="welcome-pointer"><span aria-hidden="true">↑</span> Enable MCP above to connect your own agent.</p>
+        <p class="welcome-note">For the best experience, use your own agent. Duckbench also includes a built-in agent with limited tokens.</p>
+        <p data-id="loginHint" class="welcome-pointer">Sign in below to use the built-in agent. <span aria-hidden="true">↓</span></p>
       </div>
       <div role="log" aria-label="Conversation"></div>
     </div>
     <section class="agent-proposal" aria-label="Proposed edit" hidden><strong data-id="target"></strong><details open><summary>Review edit</summary><pre class="removed" data-id="original"></pre><pre class="added" data-id="replacement"></pre></details><div><button data-id="apply">Apply edit</button> <button data-id="applyRun">Apply &amp; Run</button> <button data-id="discard">Discard</button></div></section>
-    <form class="agent-compose"><textarea aria-label="Message to agent" rows="3" placeholder="Ask about this project…"></textarea>
-    <div data-id="mentions" class="agent-mentions" hidden></div><div><output data-id="status" role="status"></output><button data-id="send" class="primary" disabled>Send</button><button type="button" data-id="cancel" hidden>Stop</button></div></form>
+    <div class="agent-footer"><form class="agent-compose"><div data-id="mentions" class="agent-mentions" hidden></div>
+    <div class="input-box"><textarea aria-label="Message to agent" rows="2" placeholder="Ask about this project, or @ to reference a file"></textarea>
+    <button data-id="send" class="send-btn" aria-label="Send" title="Send (Enter)" disabled>${icon('<path d="M2.5 13.5l11-5.5-11-5.5 1.8 5.5zM4.3 8h5"/>')}</button><button type="button" data-id="cancel" class="send-btn stop-btn" aria-label="Stop" title="Stop" hidden>${icon('<rect x="4.5" y="4.5" width="7" height="7" rx="1" fill="currentColor" stroke="none"/>')}</button></div>
+    <output data-id="status" role="status"></output></form>
     <footer class="agent-account">
-      <button data-id="signIn" aria-haspopup="dialog" aria-controls="agent-sign-in" disabled>Sign in</button>
-      <span data-id="identity" hidden></span><button data-id="logout" hidden>Sign out</button>
-      <div data-id="billing" class="agent-billing" hidden><span data-id="usage"></span><select data-id="model" aria-label="Agent model" hidden></select></div>
-    </footer>
+      <button data-id="signIn" class="link-btn" aria-haspopup="dialog" aria-controls="agent-sign-in" disabled>Sign in</button>
+      <span data-id="identity" hidden></span><button data-id="logout" class="link-btn" hidden>Sign out</button>
+      <div data-id="billing" class="agent-billing" hidden><span data-id="usage"></span></div>
+    </footer></div>
     <dialog id="agent-sign-in" data-id="chooser" class="file-dialog agent-sign-in" aria-labelledby="agent-sign-in-title">
       <h2 id="agent-sign-in-title">Sign in to Duckbench</h2>
       <div data-id="providers">
@@ -201,7 +208,9 @@ export function createAgentPanel(project, {apply, run, runLabel, show, close}) {
   function message(label, text, save=true) {
     if(save&&record){record.transcript.push({label,text});persist();}
     const item = document.createElement('article');
+    item.className = {You:'message-bubble user',Duckbench:'message-bubble assistant',Tool:'tool-chip'}[label] || 'agent-note';
     const from = document.createElement('strong');
+    from.className = 'visually-hidden';
     from.textContent = label;
     const body = document.createElement('p');
     body.textContent = text;
