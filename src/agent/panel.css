@@ -46,9 +46,34 @@
 .message-bubble.assistant { align-self:flex-start; background:var(--ka-chrome-bg); border:1px solid var(--ka-border); }
 .tool-chip { align-self:flex-start; max-width:100%; padding:3px 9px; border:1px solid var(--ka-border); border-radius:10px;
   background:var(--ka-chrome-bg); color:var(--ka-muted); font-size:12px; }
-.tool-chip p::before { content:'✓ '; color:var(--ka-accent); }
 .tool-chip p { font-family:var(--ka-mono); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.agent-note { align-self:center; color:var(--ka-muted); font-style:italic; font-size:12px; }
+.tool-chip.is-done p::before { content:'✓ '; color:var(--ka-accent); }
+.tool-chip.is-error { border-color:var(--ka-error); }
+.tool-chip.is-error p::before { content:'✕ '; color:var(--ka-error); }
+.tool-chip.is-running p::before { content:''; display:inline-block; width:8px; height:8px; margin-right:6px; border:1.5px solid var(--ka-muted);
+  border-top-color:transparent; border-radius:50%; animation:spin .8s linear infinite; }
+.agent-note { align-self:center; display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:4px 8px; color:var(--ka-muted); font-style:italic; font-size:12px; text-align:center; }
+.agent-note button { font-style:normal; border-radius:4px; padding:2px 8px; background:var(--ka-bg); }
+
+/* Replies: Markdown. */
+.message-bubble.assistant p,.message-bubble.assistant li { white-space:pre-wrap; }
+.message-bubble.assistant>:not(strong):first-of-type,.message-bubble.assistant .reply>:first-child { margin-top:0; }
+.message-bubble.assistant p+p,.message-bubble.assistant p+ul,.message-bubble.assistant p+ol,.message-bubble.assistant ul+p,.message-bubble.assistant ol+p,
+.message-bubble.assistant pre+p,.message-bubble.assistant p+pre { margin-top:8px; }
+.message-bubble.assistant :is(h4,h5,h6) { margin:10px 0 4px; font-size:13px; }
+.message-bubble.assistant :is(ul,ol) { margin:4px 0; padding-left:20px; }
+.message-bubble.assistant li+li { margin-top:2px; }
+.message-bubble code { font:11.5px var(--ka-mono); background:var(--ka-hover); border-radius:3px; padding:1px 4px; }
+.message-bubble pre { margin:6px 0; padding:8px; overflow:auto; background:var(--ka-bg); border:1px solid var(--ka-border); border-radius:4px; white-space:pre; }
+.message-bubble pre code { background:none; padding:0; }
+.message-bubble.is-streaming .reply>:last-child::after { content:'▍'; color:var(--ka-accent); animation:blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity:0; } }
+
+/* The agent's to-do list, pinned above the message box. */
+.agent-todos { flex:none; max-height:25%; overflow:auto; margin:0; padding:8px 12px 8px 30px; border-top:1px solid var(--ka-border); background:var(--ka-chrome-bg); font-size:12px; line-height:1.5; }
+.agent-todos li.is-done { color:var(--ka-muted); text-decoration:line-through; }
+.agent-options { display:flex; justify-content:flex-start; margin-top:6px; }
+.agent-options select { font:inherit; font-size:11px; padding:1px 4px; color:var(--ka-fg); background:var(--ka-bg); border:1px solid var(--ka-border); border-radius:4px; }
 
 /* Welcome: centred, with bold arrows to the MCP row above and sign-in below. */
 .agent-welcome { margin:auto 0; padding:24px 12px; text-align:center; color:var(--ka-muted); }
@@ -83,7 +108,7 @@
 .stop-btn { background:var(--ka-fg); color:var(--ka-bg); }
 .agent-compose>output { display:block; margin-top:4px; min-height:0; overflow-wrap:anywhere; }
 .agent-compose>output:empty { display:none; }
-.agent-account { display:flex; flex-wrap:wrap; gap:2px 8px; align-items:center; margin-top:6px; font-size:11px; color:var(--ka-muted); }
+.agent-account { display:flex; flex-wrap:wrap; gap:2px 8px; align-items:center; margin-top:4px; font-size:11px; color:var(--ka-muted); }
 .agent-account [data-id="identity"] { overflow-wrap:anywhere; }
 .agent-account [data-id="logout"] { margin-left:auto; }
 .link-btn { border:0; padding:0; background:none; color:var(--ka-accent); font-size:11px; }
@@ -110,3 +135,4 @@
   .agent-proposal .removed { background:#3d2222; color:#f2bcb7; }
   .send-btn:hover:not(:disabled),.agent-proposal [data-id="apply"]:hover:not(:disabled) { background:#086bbb; }
 }
+@media (prefers-reduced-motion:reduce) { .tool-chip.is-running p::before,.message-bubble.is-streaming .reply>:last-child::after { animation:none; } }

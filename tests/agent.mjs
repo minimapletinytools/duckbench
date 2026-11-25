@@ -72,8 +72,10 @@ async function exercise(page, isDesktop) {
     assert.equal((await fetch(url, {method:'POST'})).status, 401);
     await client.connect(new StreamableHTTPClientTransport(new URL(url), {requestInit: {headers}}));
     assert.match(client.getInstructions(), /build123d/);
-    assert.deepEqual((await client.listTools()).tools.map(t => t.name).sort(), ['build_result','list_files','propose_edit','read_file','workbench_state']);
+    assert.deepEqual((await client.listTools()).tools.map(t => t.name).sort(), ['build123d_api','build_result','describe_model','get_selection',
+      'list_files','propose_edit','read_file','read_output','run_build','screenshot','search_files','workbench_state']);
     const call = (name,args) => client.callTool({name, arguments: args});
+    const call2 = call;
     const state = JSON.parse((await call('workbench_state', {})).content[0].text);
     assert.equal(state.activeFile, 'duck.py');
     assert.match((await call('list_files', {})).content[0].text, /duck.py/);
@@ -93,21 +95,70 @@ async function exercise(page, isDesktop) {
     assert.equal(await page.getByRole('tree', {name:'Matching files'}).getByRole('treeitem').count(), 1);
 
     if (!isDesktop) {
+      // A streamed turn: read, a reviewed edit, a to-do list, then a reply in Markdown.
       let requests = 0;
+      const sse = events => events.map(event => 'data: ' + JSON.stringify(event) + '\n\n').join('') + 'data: [DONE]\n\n';
+      const call = (id, name, args) => ({choices:[{delta:{tool_calls:[{index:0, id, type:'function', function:{name, arguments:JSON.stringify(args)}}]}, finish_reason:'tool_calls'}]});
+      const seen = [];
       await page.route('**/v1/chat/completions', route => {
         const body = route.request().postDataJSON();
         assert.ok(route.request().headers().authorization.startsWith('Bearer '));
-        assert.ok(body.model && body.tools.length);
-        const result = requests++ === 0
-          ? {role:'assistant', content:null, tool_calls:[{id:'one', type:'function', function:{name:'read_file', arguments:'{"path":"duck.py"}'}}]}
-          : {role:'assistant', content:'The file contains a comment.'};
-        if (requests === 2) assert.match(body.messages.at(-1).content, /reviewed editor buffer/);
-        return route.fulfill({json:{choices:[{message:result}]}});
+        assert.ok(body.model && body.tools.some(t => t.function.name === 'edit_file') && body.stream);
+        seen.push(body.messages);
+        const step = requests++;
+        if (step === 0) assert.match(body.messages.at(-1).content, /^\[Duckbench note: The active file is duck\.py[^]*What is in duck\.py\?$/);
+        if (step === 1) assert.match(body.messages.at(-1).content, /^duck\.py\n1\t# reviewed editor buffer/);
+        if (step === 2) assert.match(body.messages.at(-1).content, /^Edited duck\.py \(1 replacement\)\./);
+        const events = [
+          [call('one', 'read_file', {path:'duck.py'})],
+          [call('two', 'edit_file', {path:'duck.py', old_string:'reviewed', new_string:'agent-edited'})],
+          [call('three', 'update_todos', {items:[{text:'Read the file', done:true}, {text:'Explain it'}]})],
+          [{choices:[{delta:{content:'The file contains '}}]}, {choices:[{delta:{content:'a **comment**.'}, finish_reason:'stop'}]}],
+        ][step];
+        return route.fulfill({status:200, headers:{'content-type':'text/event-stream'}, body:sse(events)});
       });
       await page.getByLabel('Message to agent').fill('What is in duck.py?');
       await page.getByRole('button', {name:'Send', exact:true}).click();
+      const review = page.getByRole('region', {name:'Proposed edit'});
+      await review.getByRole('button', {name:'Apply edit'}).waitFor();
+      assert.match(await review.textContent(), /− # reviewed editor buffer[^]*\+ # agent-edited editor buffer/);
+      await review.getByRole('button', {name:'Apply edit'}).click();
       await page.getByText('The file contains a comment.', {exact:true}).waitFor();
-      assert.equal(requests, 2);
+      assert.equal(await page.locator('.message-bubble.assistant strong:not(.visually-hidden)').textContent(), 'comment');
+      assert.equal(requests, 4);
+      assert.match((await call2('read_file', {path:'duck.py'})).content[0].text, /# agent-edited editor buffer/);
+      assert.deepEqual(await page.getByRole('list', {name:'Agent to-do list'}).getByRole('listitem').allTextContents(), ['Read the file', 'Explain it']);
+      assert.equal(await page.locator('.tool-chip.is-done').count(), 3);
+      // The turn's tool calls stay in the conversation for the next one.
+      assert.ok(seen[3].some(message => message.role === 'tool' && message.tool_call_id === 'one'));
+      await page.getByRole('button', {name:'Undo these changes'}).click();
+      await page.getByText('Undid the agent\'s last changes.').waitFor();
+      assert.match((await call2('read_file', {path:'duck.py'})).content[0].text, /# reviewed editor buffer/);
+
+      // Automatic edits make new files without asking; plan mode refuses them.
+      await page.unroute('**/v1/chat/completions');
+      let second = 0;
+      await page.route('**/v1/chat/completions', route => {
+        const body = route.request().postDataJSON();
+        const step = second++;
+        if (step === 1) assert.match(body.messages.at(-1).content, planned ? /^Error: Plan mode is on/ : /^Created parts\/notes\.txt\./);
+        const events = step === 0 ? [call('w', 'write_file', {path:'parts/notes.txt', content:planned ? 'changed' : 'hello'})]
+          : [{choices:[{delta:{content:'Done.'}, finish_reason:'stop'}]}];
+        return route.fulfill({status:200, headers:{'content-type':'text/event-stream'}, body:sse(events)});
+      });
+      let planned = false;
+      await page.getByLabel('Edit permissions').selectOption('auto');
+      await page.getByLabel('Message to agent').fill('Make a notes file');
+      await page.getByRole('button', {name:'Send', exact:true}).click();
+      await page.getByText('Done.', {exact:true}).waitFor();
+      assert.match((await call2('read_file', {path:'parts/notes.txt'})).content[0].text, /1\thello/);
+      planned = true; second = 0;
+      await page.getByLabel('Edit permissions').selectOption('plan');
+      await page.getByLabel('Message to agent').fill('Make it again');
+      await page.getByRole('button', {name:'Send', exact:true}).click();
+      await page.getByText('Done.', {exact:true}).nth(1).waitFor();
+      await page.getByLabel('Edit permissions').selectOption('ask');
+      assert.match((await call2('read_file', {path:'parts/notes.txt'})).content[0].text, /1\thello/);
       assert.ok(await page.locator('[data-id=welcome]').isHidden());
       await page.getByRole('checkbox',{name:'Enable MCP server'}).uncheck();
       await page.getByText('Disconnected',{exact:true}).waitFor();
@@ -183,6 +234,23 @@ try {
       assert.equal(build.runTarget,'model.py');
       assert.equal(build.lastSuccessfulId,build.lastAttempt.id);
       assert.equal(build.lastAttempt.status,'success');
+      // The tools that let an agent check its work, against the real runtime.
+      const text = async (name,args={}) => { const result = await tool(name,args); assert.ok(!result.isError, name+': '+result.content[0].text); return result.content.at(-1).text; };
+      const model = JSON.parse(await text('describe_model'));
+      assert.deepEqual(model.overall.size.map(Math.round), [72,72,5]);
+      assert.equal(model.parts[0].path, 'Wheel 36');
+      assert.match(await text('search_files',{pattern:'radius',glob:'*.py'}), /model\.py:2: from parts\.wheel import radius[^]*parts\/wheel\.py:1: radius = 36/);
+      assert.match(await text('build123d_api',{name:'Cylinder'}), /"signature":"\(radius: /);
+      assert.match(await text('build123d_api',{search:'^fillet$'}), /fillet/);
+      const shot = await tool('screenshot',{view:'iso'});
+      assert.equal(shot.content[0].type, 'image');
+      assert.ok(shot.content[0].data.length > 2000);
+      assert.match(await text('run_build',{}), /^Built model\.py without errors/);
+      assert.match(await text('read_output',{contains:'Built in'}), /Built in/);
+      await writeFile(helper,'radius = (');
+      const failed = await text('run_build',{});
+      assert.match(failed, /^The build of model\.py failed: [^]*SyntaxError[^]*parts\/wheel\.py/);
+      await writeFile(helper,'radius = 36');
     } finally { await diskClient.close(); }
     await page.getByRole('checkbox',{name:'Enable MCP server'}).uncheck();
     // Stand in for the system browser returning from Google with a PKCE code.
@@ -228,6 +296,7 @@ try {
     await vite.listen();
     browser = await chromium.launch({channel:'chrome'});
     const page = await browser.newPage({viewport:{width:1450,height:900}});
+    page.setDefaultTimeout(30000);
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
     let exchanged = false;

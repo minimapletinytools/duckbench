@@ -1,4 +1,4 @@
-import {callTool, instructions, tools} from './tools.js';
+import {callTool, instructions, mcpToolList} from './tools.js';
 
 // Each connection belongs to one account and one project. Switching either stops it.
 export function createRelay(account, project, report) {
@@ -68,7 +68,7 @@ export function createRelay(account, project, report) {
         const reply = {v: 1, id: msg.id};
         try {
           if (!Number.isFinite(msg.deadline) || Date.now() > msg.deadline) throw new Error('Call expired.');
-          if (msg.method === 'tools/list') reply.result = {tools};
+          if (msg.method === 'tools/list') reply.result = {tools: mcpToolList};
           else if (msg.method === 'tools/call') reply.result = await callTool(project, msg.params?.name, msg.params?.arguments);
           else throw new Error('Unknown relay method.');
         } catch (error) { reply.error = error.message; }

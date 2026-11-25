@@ -15,7 +15,8 @@ export async function createAccount(onSession) {
     flowType: 'pkce', persistSession: !desktop, detectSessionInUrl: false, autoRefreshToken: true,
   });
   auth.onAuthStateChange((_event, session) => onSession(session?.user || null));
-  async function request(path, {method = 'GET', body, signal, token, keepalive = false} = {}) {
+  // With onChunk, a streamed reply is handed over as it arrives and the result is null.
+  async function request(path, {method = 'GET', body, signal, token, keepalive = false, onChunk} = {}) {
     const headers = {};
     if (token === undefined && path !== '/models') {
       const {data, error} = await auth.getSession();
@@ -26,24 +27,33 @@ export async function createAccount(onSession) {
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     const init = {method, headers, body: body === undefined ? undefined : JSON.stringify(body)};
     signal?.throwIfAborted();
-    let status, data;
+    let status, data = null, streamed = false;
     if (desktop) {
       const id = crypto.randomUUID();
       const abort = () => { void desktop.abortAgentRequest(id); };
+      const unsubscribe = onChunk ? desktop.onAgentChunk(chunk => { if (chunk.id === id) onChunk(chunk.text); }) : null;
       signal?.addEventListener('abort', abort, {once: true});
-      try { ({status, data} = await desktop.agentRequest(id, path, init)); }
-      finally { signal?.removeEventListener('abort', abort); }
+      try { ({status, data = null, streamed = false} = await desktop.agentRequest(id, path, {...init, stream: !!onChunk})); }
+      finally { signal?.removeEventListener('abort', abort); unsubscribe?.(); }
     } else {
       const response = await fetch(config.backend.replace(/\/$/, '') + path, {...init, signal, keepalive});
       status = response.status;
-      data = await response.json().catch(() => null);
+      if (onChunk && response.ok && response.body && /event-stream/.test(response.headers.get('content-type') || '')) {
+        const reader = response.body.getReader(), decoder = new TextDecoder();
+        for (;;) {
+          const {done, value} = await reader.read();
+          if (done) break;
+          onChunk(decoder.decode(value, {stream: true}));
+        }
+        streamed = true;
+      } else data = await response.json().catch(() => null);
     }
     signal?.throwIfAborted();
     if (status < 200 || status >= 300) {
       const reason = data?.error?.message || data?.error || ('Backend returned HTTP ' + status);
       throw Object.assign(new Error(String(reason)), {status});
     }
-    return data;
+    return streamed ? null : data;
   }
 
   async function complete(url) {

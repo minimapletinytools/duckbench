@@ -68,3 +68,27 @@ class RunnerTests(unittest.TestCase):
                 helper.write_text(f'size={value}')
                 runner.run_model('from build123d import *\nfrom reload_helper import size\nresult=Box(size,2,1)',str(Path(d,'model.py')))
                 self.assertAlmostEqual(runner._last_result.volume, value*2)
+
+    def test_describe_model_measures_each_labelled_part(self):
+        code = ('from build123d import *\n'
+                'a = Box(10, 20, 30); a.label = "block"\n'
+                'b = Pos(40, 0, 0) * Cylinder(5, 10); b.label = "peg"\n'
+                'result = Compound(label="pair", children=[a, b])')
+        runner.run_model(code, 'model.py', build_id=91)
+        info = runner.dispatch({'method': 'describe', 'params': {'build_id': 91}})
+        self.assertEqual(info['units'], 'mm')
+        self.assertEqual([part['path'] for part in info['parts']], ['pair/block', 'pair/peg'])
+        self.assertEqual(info['parts'][0]['size'], [10.0, 20.0, 30.0])
+        self.assertAlmostEqual(info['parts'][0]['volume'], 6000, places=1)
+        self.assertEqual(info['overall']['solids'], 2)
+        with self.assertRaisesRegex(ValueError, 'Run the model first'):
+            runner.describe_model(build_id=12345)
+
+    def test_api_lookup_reads_the_installed_build123d(self):
+        box = runner.dispatch({'method': 'api', 'params': {'name': 'Box'}})
+        self.assertTrue(box['signature'].startswith('(length: '))
+        self.assertIn('Part', box['bases'])
+        self.assertIn('fillet', runner.api_lookup(search='^fillet$')['matches'][0])
+        self.assertIn('Box', runner.api_lookup()['names'])
+        with self.assertRaisesRegex(ValueError, 'Similar names: Box'):
+            runner.api_lookup('Boxx')

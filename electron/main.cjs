@@ -124,6 +124,20 @@ ipcMain.handle('workspace:create-file',(_,relative)=>{
  const target=path.join(parent,path.basename(relative));
  fs.writeFileSync(target,'',{flag:'wx'});watch(target);return target;
 });
+ipcMain.handle('workspace:rename',(_,filename,relative)=>{
+ const source=explorerPath(filename);
+ if(!fs.lstatSync(source).isFile())throw new Error('Only files can be renamed.');
+ if(typeof relative!=='string'||path.isAbsolute(relative)||relative.split(/[\\/]/).some(part=>!part||!explorerName(part)||part==='..'))throw new Error('Enter a project-relative name.');
+ let parent=workspace;
+ for(const part of relative.split(/[\\/]/).slice(0,-1)){
+   parent=path.join(explorerPath(parent),part);
+   if(!fs.existsSync(parent))fs.mkdirSync(parent);
+   else if(!fs.lstatSync(parent).isDirectory())throw new Error('A file already uses that folder name.');
+ }
+ const target=path.join(explorerPath(parent),path.basename(relative));
+ if(fs.existsSync(target))throw new Error(relative+' already exists.');
+ fs.renameSync(source,target);return target;
+});
 ipcMain.handle('workspace:reveal',(_,filename)=>shell.showItemInFolder(explorerPath(filename)));
 ipcMain.handle('workspace:save-buffer',(_,data)=>{
  const target=explorerPath(data.filename);
