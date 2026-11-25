@@ -1,7 +1,7 @@
 import {createAccount} from './account.js';
 import {createRelay} from './relay.js';
 import {clients, setupText} from './mcp-setup.js';
-import {callTool, describeBuild, instructions, mcpToolList} from './tools.js';
+import {callTool, describeBuild, describeChange, instructions, mcpToolList} from './tools.js';
 import {chat} from './chat.js';
 import {renderMarkdown} from './markdown.js';
 import './panel.css';
@@ -134,7 +134,7 @@ export function createAgentPanel(project, {run, runLabel, show, close}) {
     if(!ui.threads.childElementCount)ui.threads.textContent='No saved conversations.';
   };
 
-  // Review: one change at a time, from the built-in agent (which waits) or an MCP client (which doesn't).
+  // Review: the built-in agent's changes in ask mode, one at a time. MCP clients' changes don't come here.
   const review = element.querySelector('.agent-proposal');
   let pending = null;
   function hideReview() {
@@ -190,9 +190,7 @@ export function createAgentPanel(project, {run, runLabel, show, close}) {
     if (!turnChanges.has(change.path)) turnChanges.set(change.path, change.source);
     if (change.kind === 'rename' && !turnChanges.has(change.to)) turnChanges.set(change.to, null);
   }
-  const done = change => ({edit: `Edited ${change.path} (${change.count} replacement${change.count > 1 ? 's' : ''}).`,
-    write: (change.source === null ? 'Created ' : 'Rewrote ') + change.path + '.', delete: 'Deleted ' + change.path + '.',
-    rename: `Renamed ${change.path} to ${change.to}.`})[change.kind];
+  const done = describeChange;
 
   // The built-in agent's edits: refused in plan mode, reviewed in ask mode, then applied and built.
   project.change = async change => {
@@ -213,33 +211,6 @@ export function createAgentPanel(project, {run, runLabel, show, close}) {
       text += '\n' + describeBuild(attempt, attempt?.status === 'failed' ? project.output(attempt.outputStart) : '');
     } else if (python) text += ' The model has not been built yet: run_build builds it.';
     return text;
-  };
-  // MCP clients' proposals: shown for review; the tool returns at once.
-  project.propose = async ({path, original, replacement}) => {
-    if (pending) throw new Error('An edit is already awaiting review.');
-    const owner=user?.id,scope=context;
-    const source=await project.read(path);
-    if(context!==scope||owner!==user?.id||pending)throw new Error('Project or review changed.');
-    const start = source.indexOf(original);
-    const unique = original ? start >= 0 && source.lastIndexOf(original) === start : source.length === 0;
-    if (!unique || original === replacement) {
-      throw new Error('Original text must match exactly once and the replacement must change it.');
-    }
-    const change = {kind: 'edit', path, source, original, replacement, count: 1,
-      next: source.slice(0, start) + replacement + source.slice(start + original.length)};
-    void ask(change).then(async decision => {
-      if (decision === 'discard') { message('Review', 'Discarded edit to ' + path); return; }
-      if (context !== scope) return;
-      ui.apply.disabled = ui.applyRun.disabled = ui.discard.disabled = true;
-      try {
-        await project.apply(change);
-        message('Review', 'Applied edit to ' + path);
-        ui.status.textContent = 'Applied to ' + path;
-        if (decision === 'applyRun') await run({saveHelpers: true});
-      } catch (error) { ui.status.textContent = error.message; }
-      finally { ui.apply.disabled = ui.applyRun.disabled = ui.discard.disabled = false; }
-    });
-    return {status: 'Awaiting user review', path};
   };
   project.todos = items => { showTodos(items); if (record) { record.todos = items; persist(); } };
   function showTodos(items) {

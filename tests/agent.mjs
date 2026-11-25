@@ -73,8 +73,8 @@ async function exercise(page, isDesktop) {
     assert.equal((await fetch(url, {method:'POST'})).status, 401);
     await client.connect(new StreamableHTTPClientTransport(new URL(url), {requestInit: {headers}}));
     assert.match(client.getInstructions(), /build123d/);
-    assert.deepEqual((await client.listTools()).tools.map(t => t.name).sort(), ['build123d_api','build_result','describe_model','get_selection',
-      'list_files','propose_edit','read_file','read_output','run_build','screenshot','search_files','workbench_state']);
+    assert.deepEqual((await client.listTools()).tools.map(t => t.name).sort(), ['build123d_api','build_result','delete_file','describe_model','edit_file','get_selection',
+      'list_files','read_file','read_output','rename_file','run_build','screenshot','search_files','workbench_state','write_file']);
     const call = (name,args) => client.callTool({name, arguments: args});
     const call2 = call;
     const state = JSON.parse((await call('workbench_state', {})).content[0].text);
@@ -87,11 +87,22 @@ async function exercise(page, isDesktop) {
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+a' : 'Control+a');
     await page.keyboard.insertText('# current editor buffer');
     assert.match((await call('read_file', {path:'duck.py'})).content[0].text, /current editor buffer/);
-    const proposal = await call('propose_edit', {path:'duck.py', original:'current', replacement:'reviewed'});
-    assert.match(proposal.content[0].text, /Awaiting user review/);
-    assert.match((await call('read_file', {path:'duck.py'})).content[0].text, /current editor buffer/);
-    await page.getByRole('button', {name:'Apply edit'}).click();
-    assert.match((await call('read_file', {path:'duck.py'})).content[0].text, /reviewed editor buffer/);
+    const edited = await call('edit_file', {path:'duck.py', old_string:'current', new_string:'edited'});
+    if (isDesktop) {
+      // On desktop an MCP change is saved to disk, so it may not touch the user's unsaved edits.
+      assert.match(edited.content[0].text, /unsaved changes/);
+      assert.match((await call('read_file', {path:'duck.py'})).content[0].text, /current editor buffer/);
+    } else {
+      // Applied at once, with no review in the Agent panel.
+      assert.match(edited.content[0].text, /^Edited duck\.py \(1 replacement\)\. Call run_build/);
+      assert.ok(await page.locator('.agent-proposal').isHidden());
+      assert.match((await call('read_file', {path:'duck.py'})).content[0].text, /edited editor buffer/);
+      assert.match((await call('write_file', {path:'notes/plan.txt', content:'wheels'})).content[0].text, /Created notes\/plan\.txt/);
+      assert.match((await call('rename_file', {path:'notes/plan.txt', new_path:'notes/todo.txt'})).content[0].text, /Renamed/);
+      assert.match((await call('read_file', {path:'notes/todo.txt'})).content[0].text, /wheels/);
+      assert.match((await call('delete_file', {path:'notes/todo.txt'})).content[0].text, /Deleted/);
+      assert.equal((await call('read_file', {path:'notes/todo.txt'})).isError, true);
+    }
     await page.getByRole('searchbox', {name:'Find a file'}).fill('duck');
     assert.equal(await page.getByRole('tree', {name:'Matching files'}).getByRole('treeitem').count(), 1);
 
@@ -108,11 +119,11 @@ async function exercise(page, isDesktop) {
         seen.push(body.messages);
         const step = requests++;
         if (step === 0) assert.match(body.messages.at(-1).content, /^\[Duckbench note: The active file is duck\.py[^]*What is in duck\.py\?$/);
-        if (step === 1) assert.match(body.messages.at(-1).content, /^duck\.py\n1\t# reviewed editor buffer/);
+        if (step === 1) assert.match(body.messages.at(-1).content, /^duck\.py\n1\t# edited editor buffer/);
         if (step === 2) assert.match(body.messages.at(-1).content, /^Edited duck\.py \(1 replacement\)\./);
         const events = [
           [call('one', 'read_file', {path:'duck.py'})],
-          [call('two', 'edit_file', {path:'duck.py', old_string:'reviewed', new_string:'agent-edited'})],
+          [call('two', 'edit_file', {path:'duck.py', old_string:'edited', new_string:'agent-edited'})],
           [call('three', 'update_todos', {items:[{text:'Read the file', done:true}, {text:'Explain it'}]})],
           [{choices:[{delta:{content:'The file contains '}}]}, {choices:[{delta:{content:'a **comment**.'}, finish_reason:'stop'}]}],
         ][step];
@@ -122,7 +133,7 @@ async function exercise(page, isDesktop) {
       await page.getByRole('button', {name:'Send', exact:true}).click();
       const review = page.getByRole('region', {name:'Proposed edit'});
       await review.getByRole('button', {name:'Apply edit'}).waitFor();
-      assert.match(await review.textContent(), /− # reviewed editor buffer[^]*\+ # agent-edited editor buffer/);
+      assert.match(await review.textContent(), /− # edited editor buffer[^]*\+ # agent-edited editor buffer/);
       await review.getByRole('button', {name:'Apply edit'}).click();
       await page.getByText('The file contains a comment.', {exact:true}).waitFor();
       assert.equal(await page.locator('.message-bubble.assistant strong:not(.visually-hidden)').textContent(), 'comment');
@@ -134,7 +145,7 @@ async function exercise(page, isDesktop) {
       assert.ok(seen[3].some(message => message.role === 'tool' && message.tool_call_id === 'one'));
       await page.getByRole('button', {name:'Undo these changes'}).click();
       await page.getByText('Undid the agent\'s last changes.').waitFor();
-      assert.match((await call2('read_file', {path:'duck.py'})).content[0].text, /# reviewed editor buffer/);
+      assert.match((await call2('read_file', {path:'duck.py'})).content[0].text, /# edited editor buffer/);
 
       // Automatic edits make new files without asking; plan mode refuses them.
       await page.unroute('**/v1/chat/completions');
@@ -218,16 +229,20 @@ try {
       await target.click();await target.click({button:'right'});
       await page.getByRole('menuitem',{name:'Set as run target'}).click();
       const helper = path.join(projectPath,'parts','wheel.py');
-      const propose = original => tool('propose_edit',{path:'parts/wheel.py',original,replacement:'radius = 36'});
-      assert.match((await propose('radius = 24')).content[0].text,/Awaiting user review/);
+      // Edits read the file afresh, apply at once and are saved to disk.
       await writeFile(helper,'radius = 30');
-      await page.getByRole('button',{name:'Apply edit'}).click();
-      await page.locator('[data-id=status]').filter({hasText:/fresh edit/i}).waitFor();
-      assert.equal(await readFile(helper,'utf8'),'radius = 30');
-      assert.match((await propose('radius = 30')).content[0].text,/Awaiting user review/);
-      await page.locator('[data-id=applyRun]').click();
-      await page.waitForFunction(()=>document.querySelector('#model-state').textContent==='result',null,{timeout:90000});
+      const edit = original => tool('edit_file',{path:'parts/wheel.py',old_string:original,new_string:'radius = 36'});
+      assert.equal((await edit('radius = 24')).isError,true);
+      assert.match((await edit('radius = 30')).content[0].text,/Edited parts\/wheel\.py/);
       assert.equal(await readFile(helper,'utf8'),'radius = 36');
+      assert.match((await tool('write_file',{path:'parts/axle.txt',content:'axle'})).content[0].text,/Created/);
+      assert.equal(await readFile(path.join(projectPath,'parts','axle.txt'),'utf8'),'axle');
+      assert.match((await tool('rename_file',{path:'parts/axle.txt',new_path:'notes/axle.txt'})).content[0].text,/Renamed/);
+      assert.equal(await readFile(path.join(projectPath,'notes','axle.txt'),'utf8'),'axle');
+      assert.match((await tool('delete_file',{path:'notes/axle.txt'})).content[0].text,/Deleted/);
+      await assert.rejects(readFile(path.join(projectPath,'notes','axle.txt'),'utf8'));
+      assert.match((await tool('run_build',{})).content[0].text,/Built .*model\.py without errors/);
+      await page.waitForFunction(()=>document.querySelector('#model-state').textContent==='result',null,{timeout:90000});
       const wheel = page.locator('.tv-node-label').filter({hasText:'Wheel 36'});
       if (!await wheel.count()) await page.locator('.tv-nav-marker').first().click();
       await wheel.waitFor();

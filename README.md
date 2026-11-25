@@ -83,7 +83,12 @@ The model picker uses the Duckbench Worker catalog. Chat charges the signed-in K
 | `screenshot` | Return a picture of the 3D preview, optionally after moving the camera to a preset view. |
 | `get_selection` | List the parts the user picked in the preview, newest first. |
 | `build123d_api` | Look up the installed build123d's signatures and docstrings, or search its names. |
-| `propose_edit` | Submit one exact replacement for review in a project file. Duckbench checks that the source still matches when the user clicks Apply. |
+| `edit_file` | Replace text in a project file; `old_string` must match once unless `replace_all`. |
+| `write_file` | Create a project file (and its folders), or replace one whole. |
+| `delete_file` | Delete one project file (on desktop, to the Trash). |
+| `rename_file` | Rename or move one project file; refuses to overwrite. |
+
+MCP clients' changes apply at once through Duckbench's editor buffers, separately from the built-in agent: no review card, permission mode or Undo. On desktop each change is saved to disk, so a file with unsaved edits in Duckbench is refused until the user saves or reverts it.
 
 Desktop uses a bearer-protected HTTP server on an ephemeral loopback port. The Electron renderer dispatches tool calls against the open folder or the active standalone document. Its OAuth callback also uses loopback, with a separate listener that exists only during sign-in. Desktop account sessions last until the window closes.
 

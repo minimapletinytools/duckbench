@@ -1,4 +1,4 @@
-import {validPath} from './tools.js';
+import {describeChange, validPath} from './tools.js';
 
 const TEXT = /\.(py|json|txt|csv|svg|step|stp|md|toml|yaml|yml|cfg|ini)$/i;
 const MAX_WALK = 2000;
@@ -103,6 +103,19 @@ export function agentProject({workspace, documents, filename, preview, desktop, 
       if (change.kind === 'delete') return host.remove(project.key(change.path));
       if (change.kind === 'rename') return host.rename(project.key(change.path), change.to);
       return host.write(change.path, change.next);
+    },
+    /**
+     * Apply an MCP client's change at once, outside the built-in agent's review and Undo. On desktop it
+     * is saved to disk too, so a file with the user's unsaved edits is refused rather than saved for them.
+     */
+    async commit(change) {
+      if (desktop) for (const path of [change.path, change.to]) {
+        const doc = path && documents.get(project.key(path));
+        if (doc && doc.code !== doc.saved) throw new Error(path + ' has unsaved changes in Duckbench. Ask the user to save or revert them first.');
+      }
+      await project.apply(change);
+      if (desktop && (change.kind === 'edit' || change.kind === 'write')) await host.save(project.key(change.path));
+      return describeChange(change) + ([change.path, change.to].some(path => path?.endsWith('.py')) ? ' Call run_build to check the model builds.' : '');
     },
     /** Put a file back as it was: its text, or gone when it did not exist (for Undo). */
     async restore(path, before) {

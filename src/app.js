@@ -188,6 +188,8 @@ const project=agentProject({
   picks:limit=>({picks:cad.picks(limit)}),
   api:args=>{if(!runtime)throw new Error('Python is not available.');return runtime.call('api',args);},
   write:agentWrite,remove:removeFile,rename:agentRename,
+  /** Save one buffer to disk (desktop), for an MCP client's change. */
+  async save(key){const doc=documents.get(key);if(!window.desktop||!doc||doc.code===doc.saved)return;const code=doc.code;await window.desktop.saveProjectBuffer({filename:key,saved:doc.saved,code});doc.saved=code;sync();},
  },
  preview:()=>({status:$('runtime-status').textContent,runTarget:project.relative(runPath()),lastAttempt:lastAttempt?.target?lastAttempt:null,lastSuccessful:hasModel?project.relative(builtFilename):null,lastSuccessfulId:hasModel&&project.relative(builtFilename)?lastScene.build:null,stale:hasModel&&snapshot()!==builtSnapshot}),
 });
