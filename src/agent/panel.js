@@ -25,7 +25,7 @@ export function createAgentPanel(project, {run, runLabel, show, close}) {
       <p data-id="mcpLogin" hidden>Sign in below to connect MCP in the browser.</p>
       <output data-id="connection">Disconnected</output>
       <div data-id="setups" hidden>
-        <button type="button" class="primary" data-id="copyAll">Copy for all agents</button>
+        <button type="button" class="primary" data-id="copyAll">Copy prompt for any agent</button>
         <p>Or copy setup for one client</p><div class="mcp-clients" data-id="clients"></div>
         <output data-id="copyHint" class="mcp-copy-hint" aria-live="polite"></output>
       </div></details>
@@ -346,7 +346,7 @@ export function createAgentPanel(project, {run, runLabel, show, close}) {
     let hint;
     try {
       await navigator.clipboard.writeText(setupText(active, client));
-      hint = 'Copied. ' + (client?.next || 'Paste the prompt into your own agent. It will set up Duckbench and check which project is open.');
+      hint = 'Copied. ' + (client?.next || 'Paste the prompt into your own agent as your own message. It will add Duckbench and check which project is open.');
     } catch {
       hint = 'Clipboard access failed. Allow clipboard access and try again.';
     }

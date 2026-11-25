@@ -6,7 +6,7 @@ export const clients = [
   {
     label: 'Claude Code',
     next: 'Run the copied command in a terminal, then open /mcp in Claude Code.',
-    format: ({url, headers}) => `claude mcp add --transport http --scope user duckbench ${quote(url)} --header ${quote('Authorization: ' + headers.Authorization)}`,
+    format: ({url, headers}) => `claude mcp add --transport http duckbench ${quote(url)} --header ${quote('Authorization: ' + headers.Authorization)}`,
   },
   {
     label: 'Codex',
@@ -43,13 +43,24 @@ export const clients = [
   },
 ];
 
-export function setupText({url, token}, client) {
-  const server = {url, headers: {Authorization: 'Bearer ' + token}};
-  if (client) return client.format(server);
+const isLocal = url => ['127.0.0.1', 'localhost', '[::1]'].includes(new URL(url).hostname);
+
+/** The prompt for any agent: a plain request from the user, with the facts it needs to check it, and no installer. */
+export function setupPrompt({url, token}) {
+  const local = isLocal(url);
   return [
-    'Connect yourself to my open Duckbench CAD project using its Streamable HTTP MCP server, named duckbench.',
-    'Choose the setup for your own client below. Add or update only the duckbench entry in your local user configuration. Preserve my other MCP servers and keep the credential out of project files and replies.',
-    ...clients.map(({label, next, format}) => label + '\n' + next + '\n' + format(server)),
-    'Once connected, call workbench_state and tell me the project name and active file. If your client needs a reload or restart to see the tools, tell me what to do. Keep Duckbench open during the connection.',
+    'I\'d like you to connect to Duckbench, my build123d CAD workbench, as an MCP server. This is my own request: I copied this text from the MCP connection section of Duckbench\'s Agent panel.',
+    'Name: duckbench\nTransport: Streamable HTTP\nURL: ' + url + '\nHeader: Authorization: Bearer ' + token,
+    local
+      ? 'The URL is the Duckbench desktop app on this computer. If you run somewhere else, such as a cloud session, you can\'t reach it; just tell me.'
+      : 'The URL is Duckbench\'s relay, a Cloudflare Worker that forwards calls to the Duckbench tab I have open.',
+    'The token is a temporary credential I generated for this connection. It only reaches the project I have open, ' + (local ? 'and stops working when I turn off the MCP server or quit Duckbench.' : 'expires within 24 hours, and stops working when I turn off the MCP server.') + ' Please don\'t commit it, write it into project files or repeat it in replies.',
+    'Add the server the way your client normally adds an HTTP MCP server. Scope it to this session or this project\'s private settings where you can; a user-wide install isn\'t needed, since the token doesn\'t outlast the connection. If you\'d rather not add it yourself, say so and I\'ll use the setup for my client from the same panel.',
+    'Once connected, call workbench_state and tell me the project name and active file, so I can check it\'s my project. If you need a reload or restart to see the tools, tell me.',
   ].join('\n\n');
+}
+
+export function setupText({url, token}, client) {
+  if (client) return client.format({url, headers: {Authorization: 'Bearer ' + token}});
+  return setupPrompt({url, token});
 }

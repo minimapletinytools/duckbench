@@ -32,8 +32,9 @@ async function setupFromPanel(page) {
     if(label==='VS Code')assert.equal(JSON.parse(text).servers.duckbench.type,'http');
     if(label==='Claude Desktop')assert.equal(JSON.parse(text).mcpServers.duckbench.command,'npx');
   }
-  const prompt=await copy('Copy for all agents');
+  const prompt=await copy('Copy prompt for any agent');
   assert.ok(prompt.includes(server.url) && prompt.includes(expected) && prompt.includes('workbench_state'));
+  assert.ok(!/claude mcp add|--scope user|mcpServers|config\.toml/.test(prompt),'the prompt is a request, not an installer');
   assert.match(await settings.locator('[data-id="copyHint"]').textContent(),/Paste the prompt/);
   return server;
 }

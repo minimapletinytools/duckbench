@@ -67,7 +67,7 @@ The model picker uses the Duckbench Worker catalog. Chat charges the signed-in K
 ### Connect an external MCP client
 
 1. Open the project and select **Agent → MCP connection → Enable MCP server**. The web version requires sign-in. Desktop can serve a local client while signed out.
-2. Choose **Copy for all agents** and paste the prompt into your external agent. It can register Duckbench and call `workbench_state` to confirm the project. For manual setup, choose your client and follow the instructions beneath the buttons. **URL and token** copies the endpoint and bearer header for other Streamable HTTP clients.
+2. Choose **Copy prompt for any agent** and paste it into your external agent as your own message. It gives the server's URL and temporary token, says where they come from, and asks the agent to add the server for this session or project only and call `workbench_state` so you can confirm the project. It contains no per-client commands, so agents that guard against prompt injection don't mistake it for an installer. For manual setup, choose your client and follow the instructions beneath the buttons. **URL and token** copies the endpoint and bearer header for other Streamable HTTP clients.
 3. Keep the Duckbench window open. Unchecking **Enable MCP server**, signing out, or switching projects ends access. Reconnecting creates fresh client setup.
 
 | Tool | What the client can do |
