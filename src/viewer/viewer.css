@@ -1,0 +1,146 @@
+/* The 3D view (viewer.js). Its scene colours are read from these properties. */
+.dbv {
+  --viewer-bg: #f3f4f6;
+  --viewer-face: #d6dbe1;
+  --viewer-edge: #252a31;
+  --viewer-wire: #7a5bd1;
+  --viewer-grid: #7c8591;
+  --viewer-dim: #4a515b;
+  --viewer-hover: #2f7de1;
+  --viewer-select: #e8900c;
+  --viewer-cube-face: #f7f8fa;
+  --viewer-cube-border: #a9b1bb;
+  --viewer-cube-text: #39404a;
+  --viewer-cube-muted: #8b939d;
+  --viewer-sky: #ffffff;
+  --viewer-ground: #aeb5bf;
+  --viewer-light: 1;
+  --viewer-panel: rgba(255, 255, 255, .92);
+  --viewer-panel-border: rgba(30, 40, 55, .12);
+  --viewer-text: #2b3038;
+  --viewer-muted: #6b737d;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--viewer-bg);
+  color: var(--viewer-text);
+  font: 12px var(--ka-font, system-ui, -apple-system, 'Segoe UI', sans-serif);
+  user-select: none;
+  -webkit-user-select: none;
+}
+@media (prefers-color-scheme: dark) {
+  .dbv {
+    --viewer-bg: #1d1f22;
+    --viewer-face: #7d848e;
+    --viewer-edge: #e7e9ec;
+    --viewer-wire: #b49cf5;
+    --viewer-grid: #8c939c;
+    --viewer-dim: #b9bec6;
+    --viewer-hover: #5aa2ff;
+    --viewer-select: #f5a623;
+    --viewer-cube-face: #2f3338;
+    --viewer-cube-border: #5d646d;
+    --viewer-cube-text: #dfe3e8;
+    --viewer-cube-muted: #9aa2ab;
+    --viewer-sky: #ffffff;
+    --viewer-ground: #4a5058;
+    --viewer-light: .9;
+    --viewer-panel: rgba(32, 35, 39, .94);
+    --viewer-panel-border: rgba(255, 255, 255, .1);
+    --viewer-text: #e3e6ea;
+    --viewer-muted: #9ba3ad;
+  }
+}
+.dbv-canvas, .dbv-was, .dbv-labels { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.dbv-canvas { outline: none; touch-action: none; }
+.dbv-was, .dbv-labels { pointer-events: none; }
+.dbv-plain { background: transparent; }
+.dbv-plain > :not(.dbv-canvas) { display: none !important; }
+.dbv-labels { overflow: hidden; z-index: 1; }
+.dbv-tools, .dbv-cube, .dbv-parts, .dbv-card { z-index: 2; }
+.dbv-prompt, .dbv-hint { z-index: 3; }
+.dbv .dim-label {
+  padding: 1px 5px;
+  border-radius: 3px;
+  font: 10.5px/1.5 var(--ka-mono, ui-monospace, Menlo, monospace);
+  color: var(--viewer-text);
+  background: color-mix(in srgb, var(--viewer-bg) 82%, transparent);
+  white-space: nowrap;
+}
+.dbv .dim-label.is-hole { color: var(--viewer-muted); }
+
+.dbv-cube { position: absolute; top: 8px; right: 8px; width: 92px; height: 92px; cursor: pointer; touch-action: none; }
+.dbv-tools {
+  position: absolute; top: 10px; left: 10px; display: flex; gap: 2px; padding: 3px;
+  background: var(--viewer-panel); border: 1px solid var(--viewer-panel-border); border-radius: 7px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .06);
+}
+.dbv-tools button {
+  min-width: 27px; height: 25px; padding: 0 7px; border: 0; border-radius: 5px; background: transparent;
+  color: var(--viewer-muted); font: 500 12px var(--ka-font, system-ui, sans-serif); cursor: pointer;
+}
+.dbv-tools button:hover { background: color-mix(in srgb, var(--viewer-text) 8%, transparent); color: var(--viewer-text); }
+.dbv-tools button[aria-pressed=true] { color: var(--viewer-text); background: color-mix(in srgb, var(--viewer-hover) 16%, transparent); }
+.dbv button:focus-visible, .dbv-canvas:focus-visible { outline: 2px solid var(--viewer-hover); outline-offset: 1px; }
+
+.dbv-parts {
+  position: absolute; top: 46px; left: 10px; width: 200px; max-width: 45%; overflow: auto;
+  padding: 4px 0; background: var(--viewer-panel); border: 1px solid var(--viewer-panel-border); border-radius: 7px;
+  max-height: calc(100% - 56px);
+}
+.dbv-parts ul { list-style: none; margin: 0; padding: 0; }
+.dbv-part { display: flex; align-items: center; gap: 2px; height: 24px; padding-right: 6px; }
+.dbv-part.is-selected { background: color-mix(in srgb, var(--viewer-select) 20%, transparent); }
+.dbv-part button { border: 0; background: transparent; color: inherit; cursor: pointer; font: inherit; }
+.dbv-eye { width: 20px; padding: 0; color: var(--viewer-muted); font-size: 10px; }
+.dbv-part-name { display: block; justify-content: flex-start; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; padding: 2px 4px; border-radius: 4px; }
+.dbv-part-name:hover { background: color-mix(in srgb, var(--viewer-text) 8%, transparent); }
+
+.dbv-hint {
+  position: absolute; left: 0; top: 0; padding: 2px 7px; border-radius: 4px; pointer-events: none; opacity: 0;
+  background: var(--viewer-panel); border: 1px solid var(--viewer-panel-border); color: var(--viewer-muted);
+  font-size: 11px; white-space: nowrap; transition: opacity .12s;
+}
+.dbv-hint.is-visible { opacity: 1; transition-delay: .35s; }
+
+.dbv-card {
+  position: absolute; left: 10px; bottom: 10px; width: 290px; max-width: calc(100% - 20px); padding: 10px 12px;
+  background: var(--viewer-panel); border: 1px solid var(--viewer-panel-border); border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .08); user-select: text; -webkit-user-select: text;
+}
+.dbv-card header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.dbv-card header strong { font-weight: 600; text-transform: capitalize; }
+.dbv-card header span { flex: 1; color: var(--viewer-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbv-close { border: 0; background: transparent; color: var(--viewer-muted); font-size: 16px; line-height: 1; cursor: pointer; padding: 0 2px; }
+.dbv-card dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; }
+.dbv-card dt { color: var(--viewer-muted); }
+.dbv-card dd { margin: 0; font-family: var(--ka-mono, ui-monospace, Menlo, monospace); font-size: 11px; overflow-wrap: anywhere; }
+.dbv-selector { margin-top: 8px; }
+.dbv-selector code {
+  display: block; padding: 6px 8px; border-radius: 5px; font: 11px/1.45 var(--ka-mono, ui-monospace, Menlo, monospace);
+  background: color-mix(in srgb, var(--viewer-text) 7%, transparent); overflow-wrap: anywhere;
+}
+.dbv-card-actions { display: flex; gap: 6px; margin-top: 6px; }
+.dbv-card-actions button {
+  padding: 3px 9px; border: 1px solid var(--viewer-panel-border); border-radius: 5px; background: transparent;
+  color: var(--viewer-text); font: 11px var(--ka-font, system-ui, sans-serif); cursor: pointer;
+}
+.dbv-card-actions button:hover { background: color-mix(in srgb, var(--viewer-text) 8%, transparent); }
+.dbv-note { margin: 6px 0 0; color: var(--viewer-muted); font-size: 11px; line-height: 1.45; }
+.dbv-note:empty { display: none; }
+
+.dbv-prompt {
+  position: absolute; display: flex; align-items: center; gap: 6px; width: 320px; max-width: calc(100% - 16px);
+  padding: 5px 5px 5px 10px; background: var(--viewer-panel); border: 1px solid var(--viewer-panel-border);
+  border-radius: 20px; box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+}
+.dbv-prompt-what { flex: none; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--viewer-muted); font-size: 11px; }
+.dbv-prompt input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--viewer-text); font: 13px var(--ka-font, system-ui, sans-serif); }
+.dbv-prompt button {
+  flex: none; width: 26px; height: 26px; border: 0; border-radius: 50%; cursor: pointer;
+  background: var(--viewer-select); color: #fff; font-size: 14px; font-weight: 700;
+}
+@media (max-width: 520px) {
+  .dbv-cube { width: 72px; height: 72px; }
+  .dbv-parts { width: 160px; }
+}

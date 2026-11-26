@@ -10,8 +10,15 @@ import tempfile
 import time
 import traceback
 
+try:
+    from viewer_import import cad_scene, feature_map
+except ImportError:  # In the browser, viewer_import's source is run into these globals after this one.
+    pass
+
 _last_result = None
 _preview_results = {}
+# Each displayed build's leaves, by scene id, located: what a pick in the preview refers to.
+_preview_leaves = {}
 _project_modules = set()
 
 
@@ -22,8 +29,8 @@ def run_model(code, filename="model.py", build_id=None, displayed_build=None):
     for previous in list(_preview_results):
         if previous != displayed_build:
             del _preview_results[previous]
+            _preview_leaves.pop(previous, None)
     from build123d import Shape, BuildPart, BuildSketch, BuildLine
-    from ocp_tessellate.convert import export_three_cad_viewer_js
     start = time.perf_counter()
     path = Path(filename).resolve()
     for name in _project_modules:
@@ -49,10 +56,11 @@ def run_model(code, filename="model.py", build_id=None, displayed_build=None):
                 break
         if not isinstance(result, Shape) or result.wrapped is None:
             raise TypeError("result must be a build123d Shape or a completed BuildPart, BuildSketch or BuildLine. Use Compound(children=[...]) for assemblies.")
-        scene = json.loads(export_three_cad_viewer_js(None, result))
+        scene, leaves = cad_scene(result)
         _last_result = result
         if build_id is not None:
             _preview_results[build_id] = result
+            _preview_leaves[build_id] = leaves
         return {"scene": scene, "elapsed": time.perf_counter() - start}
     finally:
         _project_modules = {name for name, mod in sys.modules.items()
@@ -261,6 +269,147 @@ def source_read(path=None, search=None, ignore_case=False, limit=100):
         return {"version": build123d.__version__, "path": shown(os.path.relpath(target, root).replace(os.sep, "/")), "text": handle.read()}
 
 
+def _point(vector, digits=4):
+    return [round(float(c), digits) for c in vector]
+
+
+def _describe_feature(item, kind):
+    """One face, edge or vertex, measured, in model millimetres."""
+    from build123d import GeomType, Vector
+    if kind == "vertex":
+        return {"kind": "vertex", "position": _point(Vector(item))}
+    info = {"kind": kind, "type": item.geom_type.name.lower()}
+    box = item.bounding_box()
+    info["box"] = {"min": _point(box.min), "max": _point(box.max)}
+    if kind == "face":
+        center = item.center()
+        info.update(area=round(item.area, 4), center=_point(center))
+        if item.geom_type == GeomType.PLANE:
+            info["normal"] = _point(item.normal_at(center))
+        elif item.geom_type in (GeomType.CYLINDER, GeomType.CONE, GeomType.SPHERE, GeomType.TORUS):
+            try:
+                info["radius"] = round(item.radius, 4)
+                info["diameter"] = round(2 * item.radius, 4)
+            except Exception:
+                pass
+            if item.geom_type != GeomType.SPHERE:
+                try:
+                    info["axis"] = {"origin": _point(item.axis_of_rotation.position), "direction": _point(item.axis_of_rotation.direction)}
+                except Exception:
+                    pass
+    else:
+        info.update(length=round(item.length, 4), start=_point(item.position_at(0)), end=_point(item.position_at(1)))
+        if item.geom_type == GeomType.CIRCLE:
+            info.update(radius=round(item.radius, 4), diameter=round(2 * item.radius, 4), center=_point(item.arc_center), closed=item.is_closed)
+        elif item.geom_type == GeomType.LINE:
+            info["direction"] = _point((item.position_at(1) - item.position_at(0)).normalized())
+    return info
+
+
+def _between(items, kind):
+    """Between two picked features: the shortest distance, and the angle when both have a direction."""
+    from build123d import GeomType, Vector
+    a, b = items
+    result = {"distance": round(a.distance_to(b), 4)}
+    direction = lambda item: (item.normal_at(item.center()) if kind == "face" and item.geom_type == GeomType.PLANE
+                              else (item.position_at(1) - item.position_at(0)) if kind == "edge" and item.geom_type == GeomType.LINE else None)
+    if kind != "vertex":
+        da, db = direction(a), direction(b)
+        if da is not None and db is not None and da.length > 1e-9 and db.length > 1e-9:
+            result["angle"] = round(da.get_angle(db), 3)
+    else:
+        result["delta"] = _point(Vector(b) - Vector(a))
+    return result
+
+
+def _selector(shape, kind, chosen, name):
+    """The shortest build123d expression on `name` that selects exactly `chosen`, or an index list."""
+    from build123d import Axis, GeomType, SortBy
+    same = lambda found: len(found) == len(chosen) and all(any(f.wrapped.IsSame(c.wrapped) for f in found) for c in chosen)
+    method = {"face": "faces", "edge": "edges", "vertex": "vertices"}[kind]
+    everything = getattr(shape, method)()
+    bases = [(f"{name}.{method}()", everything)]
+    types = {item.geom_type for item in chosen} if kind != "vertex" else set()
+    if len(types) == 1:
+        kind_type = next(iter(types))
+        bases.append((f"{name}.{method}().filter_by(GeomType.{kind_type.name})", everything.filter_by(kind_type)))
+    for axis in ("X", "Y", "Z"):
+        if kind == "face" and all(item.geom_type == GeomType.PLANE for item in chosen) or kind == "edge" and types == {GeomType.LINE}:
+            try:
+                bases.append((f"{name}.{method}().filter_by(Axis.{axis})", everything.filter_by(getattr(Axis, axis))))
+            except Exception:
+                pass
+    keys = [(f"Axis.{axis}", getattr(Axis, axis)) for axis in ("Z", "X", "Y")]
+    keys += {"face": [("SortBy.AREA", SortBy.AREA)], "edge": [("SortBy.LENGTH", SortBy.LENGTH)]}.get(kind, [])
+    if types & {GeomType.CIRCLE, GeomType.CYLINDER}:
+        keys.append(("SortBy.RADIUS", SortBy.RADIUS))
+    found = []
+
+    def consider(text, items):
+        if same(items):
+            found.append(text)
+
+    def groups(text, items):
+        for key_text, key in keys:
+            try:
+                grouped = items.group_by(key)
+            except Exception:
+                continue
+            if not grouped:
+                continue
+            for index in (0, -1):
+                group = grouped[index]
+                if len(chosen) == 1 and len(group) == 1:
+                    # A single extreme reads better as a sort.
+                    consider(f"{text}.sort_by({key_text})[{index}]", group)
+                else:
+                    consider(f"{text}.group_by({key_text})[{index}]", group)
+                yield f"{text}.group_by({key_text})[{index}]", group
+
+    for text, items in bases:
+        consider(text, items)
+        for inner_text, inner in list(groups(text, items)):
+            if found:
+                break
+            if len(inner) > len(chosen):
+                list(groups(inner_text, inner))
+    if found:
+        return {"selector": min(found, key=len), "robust": True}
+    indices = [next(i for i, item in enumerate(everything) if item.wrapped.IsSame(c.wrapped)) for c in chosen]
+    text = f"{name}.{method}()[{indices[0]}]" if len(indices) == 1 else f"[{name}.{method}()[i] for i in {tuple(indices)}]"
+    return {"selector": text, "robust": False}
+
+
+def feature_info(build_id=None, part=None, kind="face", indices=()):
+    """What was picked in the preview: each feature measured, a measurement between two, and a selector for them."""
+    leaves = _preview_leaves.get(build_id)
+    if leaves is None:
+        raise ValueError("That model is no longer on screen. Pick it again after the next build.")
+    shape = leaves.get(part)
+    if shape is None:
+        raise ValueError(f"No part {part} in the model on screen.")
+    if kind not in ("face", "edge", "vertex"):
+        raise ValueError("kind is face, edge or vertex.")
+    items = feature_map(shape, kind)
+    try:
+        chosen = [items[int(i)] for i in indices][:24]
+    except (IndexError, ValueError):
+        raise ValueError(f"{part} has {len(items)} {kind}s; that one is not among them.")
+    if not chosen:
+        raise ValueError("Pick at least one feature.")
+    name = "result" if len(leaves) == 1 else "part"
+    result = {"part": part, "kind": kind, "features": [_describe_feature(item, kind) for item in chosen]}
+    if len(chosen) == 2:
+        result["between"] = _between(chosen, kind)
+    try:
+        result.update(_selector(shape, kind, chosen, name))
+    except Exception as error:  # A selector is a convenience; the measurements still stand.
+        result["selector_error"] = str(error)
+    if name == "part":
+        result["selector_note"] = f"`part` is the shape shown as {part.rsplit('/', 1)[-1]}."
+    return result
+
+
 def dispatch(request):
     if request["method"] == "run":
         return run_model(**request["params"])
@@ -270,6 +419,8 @@ def dispatch(request):
         return describe_model(**request["params"])
     if request["method"] == "api":
         return api_lookup(**request["params"])
+    if request["method"] == "feature":
+        return feature_info(**request["params"])
     if request["method"] == "source":
         return source_read(**request["params"])
     raise ValueError("Unknown runner method")

@@ -9,12 +9,12 @@ import {projectArchive} from '../src/project-archive.js';
 import {readCache, waitForCache} from './cache-helpers.mjs';
 
 async function checkAssembly(page) {
-  const bracket = page.locator('.tv-node-label').filter({hasText:/Bracket[ _]24/});
-  if (!await bracket.count()) await page.locator('.tv-nav-marker').first().click();
-  await bracket.waitFor();
-  const spacer = page.locator('.tv-node-label').filter({hasText:'Spacer'});
+  const parts = page.getByRole('button',{name:'Parts',exact:true});
+  if (await parts.getAttribute('aria-pressed') !== 'true') await parts.click();
+  await page.locator('.dbv-part-name').filter({hasText:/Bracket[ _]24/}).waitFor();
+  const spacer = page.locator('.dbv-part').filter({hasText:'Spacer'});
   await spacer.waitFor();
-  return spacer.locator('../..');
+  return spacer;
 }
 
 const archive = projectArchive({name:'Bracket project', activeFile:'parts/dimensions.py',runTarget:'model.py',
@@ -74,21 +74,19 @@ try {
   const requests=[];
   shared.on('request',request=>{if(/^https?:/.test(request.url()))requests.push(request.url());});
   await shared.goto(pathToFileURL(path.join(outputs,'bracket.html')).href);
-  await shared.locator('#viewport canvas').first().waitFor();
+  await shared.locator('#viewport canvas.dbv-canvas').waitFor();
   const spacer = await checkAssembly(shared);
-  const bracket = shared.locator('.tv-node-label').filter({hasText:/Bracket[ _]24/}).locator('../..');
-  const state = await spacer.getAttribute('data-state0');
-  const otherState = await bracket.getAttribute('data-state0');
-  await spacer.locator('.tv-icon0').click();
-  assert.notEqual(await spacer.getAttribute('data-state0'),state);
-  assert.equal(await bracket.getAttribute('data-state0'),otherState);
-  await spacer.locator('.tv-icon0').click();
+  const bracket = shared.locator('.dbv-part').filter({hasText:/Bracket[ _]24/});
+  await spacer.getByRole('button',{name:'Hide Spacer'}).click();
+  assert.equal(await spacer.getByRole('button',{name:'Show Spacer'}).getAttribute('aria-pressed'),'false');
+  assert.equal(await bracket.locator('.dbv-eye').getAttribute('aria-pressed'),'true');
+  await spacer.getByRole('button',{name:'Show Spacer'}).click();
   assert.deepEqual(requests,[]);
   assert.ok(await shared.locator('#open-cad').isHidden());
   assert.ok(await shared.evaluate(()=>JSON.parse(document.querySelector('#duckbench-licenses').textContent)['node_modules/three/LICENSE']));
   const scene = await shared.locator('#duckbench-scene').textContent();
   assert.ok(!scene.includes('from build123d'));
-  const canvas = shared.locator('#viewport canvas').first();
+  const canvas = shared.locator('#viewport canvas.dbv-canvas');
   const bounds = await canvas.boundingBox();
   const x = bounds.x+bounds.width/2, y = bounds.y+bounds.height/2;
   await shared.mouse.move(x,y);await shared.mouse.down();
@@ -99,7 +97,7 @@ try {
   const screen = await desktop.firstWindow();
   async function rendered(name){
     await screen.waitForFunction(expected=>document.querySelector('#model-state')?.textContent===expected,name,{timeout:90000});
-    assert.ok(await screen.locator('#cad-view canvas').first().isVisible());
+    assert.ok(await screen.locator('#cad-view canvas.dbv-canvas').isVisible());
   }
   async function open(filename){
     await desktop.evaluate(({dialog},filename)=>{dialog.showOpenDialog=async()=>({filePaths:[filename]});},filename);

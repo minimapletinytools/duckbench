@@ -98,9 +98,9 @@ html = '''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name=
 </style></head><body>'''
 html += f'<h1>Duckbench <span class="version">{escape(package["version"])}</span></h1><p>A local Python CAD workbench for desktop and browser.</p>'
 html += '<h2>Application license</h2><p>Original Duckbench code is licensed under <strong>Apache License 2.0</strong>. You may use, modify and distribute it, including commercially, subject to the license terms. Third-party components keep their own licenses. This application license does not impose a license on models you create.</p>'
-html += '<h2>Built with open source</h2><p>CAD visualization is powered by <strong>three-cad-viewer by Bernhard Walter</strong>, the viewer component used by OCP CAD Viewer. Thank you to the authors and contributors whose work makes this app possible.</p>'
+html += '<h2>Built with open source</h2><p>The 3D view is Duckbench’s own, drawn with <strong>Three.js</strong>. Its camera controls follow Kigumi’s, and its grid, dimensions and spot prompts take ideas from <strong>QuiCAD by the QuiCAD authors</strong>. Parts are tessellated by <strong>ocp-tessellate by Bernhard Walter</strong>. Thank you to the authors and contributors whose work makes this app possible.</p>'
 credits = [
- ('three-cad-viewer','Bernhard Walter','3D viewer, toolbar, model tree and inspection tools','https://github.com/bernhard-42/three-cad-viewer'),
+ ('QuiCAD','The QuiCAD authors','Ideas for the 3D view: grid, dimensions and prompting at a spot','https://github.com/ppietak/QuiCAD'),
  ('ocp-tessellate','Bernhard Walter','CAD tessellation and scene conversion','https://github.com/bernhard-42/ocp-tessellate'),
  ('build123d','The build123d Contributors','Parametric modeling in Python','https://github.com/gumyr/build123d'),
  ('Monaco Editor','Microsoft and contributors','Code editor','https://github.com/microsoft/monaco-editor'),

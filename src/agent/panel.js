@@ -390,7 +390,8 @@ export function createAgentPanel(project, {run, runLabel, show, close}) {
     else parts.push('Nothing has been built yet.');
     if (preview?.stale) parts.push('The code has changed since the model on screen was built.');
     const pick = project.picks(1).picks?.[0];
-    if (pick) parts.push(`Last picked in the 3D preview: ${pick.name} (${pick.path}).`);
+    if (pick) parts.push(`Last picked in the 3D preview: ${pick.kind === 'part' ? 'the part' : 'the ' + pick.label + ' of'} ${pick.name}` +
+      (pick.info?.selector ? `, selected by ${pick.info.selector}` : '') + '.');
     return parts.join(' ').slice(0, 2400);
   }
   /** Files changed in this conversation, as they are now, for a summary. */
@@ -431,9 +432,13 @@ export function createAgentPanel(project, {run, runLabel, show, close}) {
     note.append(button);
   }
 
+  // What a prompt from the 3D view brings along: a note about the spot, and a picture of it.
+  let attachedToNext = null;
   element.querySelector('form').onsubmit = async event => {
     event.preventDefault();
     const prompt = input.value.trim();
+    const extra = attachedToNext;
+    attachedToNext = null;
     if (!prompt || turn) return;
     if (!user) {
       ui.status.textContent='Sign in below to use the built-in agent.';
@@ -455,7 +460,8 @@ export function createAgentPanel(project, {run, runLabel, show, close}) {
       bubble = null;
     }
     try {
-      await chat({request: account.request, project, history, prompt, signal: active.signal, context: contextNote(),
+      await chat({request: account.request, project, history, prompt, signal: active.signal,
+        context: contextNote() + (extra?.note ? ' ' + extra.note : ''), images: extra?.images || [],
         model: models.find(model => model.openrouter === ui.model.value), plan: ui.mode.value === 'plan', changed: changedFiles,
         onText: (delta, at) => {
           if (at !== step) { settle(); step = at; text = ''; }
@@ -523,7 +529,16 @@ export function createAgentPanel(project, {run, runLabel, show, close}) {
     await account.finishRedirect();void loadModels();void refreshUsage();
   })().catch(error => { ui.status.textContent = error.message; });
   window.addEventListener('pagehide', () => { turn?.abort(); stop(); });
-  return {element,attach,contextKey:()=>context,setContext(key) {
+  /** Send `text` as the user's message, with a note about what it refers to and pictures. */
+  function askAbout(text, {note = '', images = []} = {}) {
+    show();
+    if (turn) { ui.status.textContent = 'Wait for the agent to finish, or stop it, then ask again.'; input.value = text; return false; }
+    input.value = text;
+    attachedToNext = {note, images};
+    element.querySelector('form').requestSubmit();
+    return true;
+  }
+  return {element,attach,ask:askAbout,contextKey:()=>context,setContext(key) {
     if (context === key) return;
     persist();reset(); context = key;loadContext();
     ui.scope.textContent = 'Share files, preview status and edit proposals for ' + project.state().project +

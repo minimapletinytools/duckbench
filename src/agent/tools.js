@@ -135,8 +135,9 @@ export const tools = [
   tool('screenshot', 'A picture of the 3D preview, to look at the model. With a view other than current, the preview\'s camera ' +
     'moves there first (the user sees it move).', {view: string('Where to look from. Defaults to current.', {enum: VIEWS})}, [],
     (project, {view = 'current'}) => project.screenshot(view), {effect: 'ui'}),
-  tool('get_selection', 'What the user picked in the 3D preview lately, newest first: each part\'s name, path and bounding box. ' +
-    'Use it when they refer to "this" or "the selected" part.',
+  tool('get_selection', 'What the user picked in the 3D preview lately, newest first: a whole part, or faces, edges or vertices ' +
+    'of one (their type, the point clicked, and once measured their sizes and a build123d selector that finds them). Use it ' +
+    'when they refer to "this", "here" or "the selected" face, edge or part.',
     {limit: {type: 'integer', minimum: 1, maximum: 20}}, [], (project, {limit = 10}) => project.picks(limit)),
   tool('camera', 'The 3D preview\'s camera: where it looks from and at, in model millimetres (Z up), its zoom and projection. ' +
     'Give view, position, target or zoom to move it there (the user sees it move); then screenshot to look. A position or ' +

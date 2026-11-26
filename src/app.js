@@ -201,6 +201,25 @@ const agent=createAgentPanel(project,{
  close:()=>{shell.toggle('right');$('toggle-agent').focus();},
 });
 shell.register({id:'agent',title:'Agent',slot:'right',element:agent.element});
+cad.setOptions({
+ // The Python side measures what was picked in the build on screen and finds a selector for it.
+ describe:({part,kind,indices})=>{
+  if(!runtime)throw new Error('Python is not available.');
+  if(importedModel||!lastScene?.build)throw new Error('Measurements are for a model built here. Run it to measure '+(importedModel?'an opened file.':'this model.'));
+  return runtime.call('feature',{build_id:lastScene.build,part,kind,indices});
+ },
+ insertText:text=>{shell.activate('source');editor.insert(text);},
+ onPrompt:({text,spot,info,image})=>{
+  const where=spot.label?`the ${spot.label}`+(spot.part?` of ${spot.part}`:''):spot.part?`the part ${spot.part}`:'the model';
+  const parts=[`The user right-clicked ${where} in the 3D preview`+(spot.point?` at (${spot.point.join(', ')}) mm`:'')+(spot.normal&&spot.kind==='face'?`, surface normal (${spot.normal.join(', ')})`:'')+'.'];
+  const feature=info?.features?.[0];
+  if(feature)parts.push('Measured: '+JSON.stringify(feature).slice(0,600)+'.');
+  if(info?.selector)parts.push(`A build123d selector for it: ${info.selector}${info.robust?'':' (by index, fragile)'}.`);
+  if(image)parts.push('The attached picture is the view around the spot, marked with a ring.');
+  parts.push('"This", "here" and "it" in the request mean that spot and the feature of the model it belongs to: find the code that made it and change that.');
+  agent.ask(text,{note:parts.join(' '),images:image?[{data:image,mimeType:'image/jpeg'}]:[]});
+ },
+});
 const refreshSearch=installExplorerSearch({
  input:$('find-file'),tree:$('file-tree'),fileRow,sync,
  entries:()=>[...[...documents.keys()].filter(path=>!inWorkspace(path)).map(path=>({name:path.split(/[\\/]/).pop(),path})),...treeEntries],

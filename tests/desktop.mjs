@@ -16,7 +16,7 @@ try {
   await page.waitForTimeout(250);
   const bounds=await page.evaluate(()=>{
    const host=document.querySelector('#cad-view').getBoundingClientRect();
-   const canvas=document.querySelector('#cad-view canvas').getBoundingClientRect();
+   const canvas=document.querySelector('#cad-view canvas.dbv-canvas').getBoundingClientRect();
    return {host:{x:host.x,y:host.y,width:host.width,height:host.height},canvas:{x:canvas.x,y:canvas.y,width:canvas.width,height:canvas.height}};
   });
   const {host,canvas}=bounds;

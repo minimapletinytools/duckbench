@@ -25,10 +25,10 @@ try{
  await page.getByRole('treeitem',{name:/model.py/}).click();
  await page.locator('#run').click();
  await page.waitForFunction(()=>document.querySelector('#model-state').textContent==='result',null,{timeout:90000});
- const firstScene=await page.locator('.cad-instance').getAttribute('id');
+ const firstScene=await page.locator('#cad-view').getAttribute('data-scene');
  await fs.writeFile(model,code+'# Changed on disk\n');
  await page.locator('#refresh-preview').waitFor({state:'visible'});
- assert.equal(await page.locator('.cad-instance').getAttribute('id'),firstScene);
+ assert.equal(await page.locator('#cad-view').getAttribute('data-scene'),firstScene);
  assert.equal(await page.locator('#run').isEnabled(),true);
  await page.locator('#refresh-preview').click();
  await page.waitForFunction(()=>!document.querySelector('#run').disabled);

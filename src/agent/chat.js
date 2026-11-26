@@ -133,7 +133,7 @@ async function compact({request, history, model, signal, changed, onNote}) {
  * Run one turn. `onText(delta, step)` streams the reply; `onTool(id, name, args)` and `onToolDone(id, result)` show tool
  * calls; `onNote(text)` reports what Duckbench did. Returns the reply's text.
  */
-export async function chat({request, project, history, prompt, context = '', signal, model, plan = false,
+export async function chat({request, project, history, prompt, context = '', images = [], signal, model, plan = false,
   onText = () => {}, onTool = () => {}, onToolDone = () => {}, onNote = () => {}, changed = async () => ''}) {
   if (!model) {
     const {models} = await request('/models', {signal});
@@ -153,7 +153,14 @@ export async function chat({request, project, history, prompt, context = '', sig
     content += '\n\nAttached file ' + path + '\n' + file.content[0].text;
     onNote('Attached ' + path);
   }
-  history.push({role: 'user', content});
+  // Pictures the user attached, or a view of the spot they asked about: seen when the model can.
+  if (images.length && model.images) {
+    history.push({role: 'user', content: [{type: 'text', text: content},
+      ...images.map(image => ({type: 'image_url', image_url: {url: `data:${image.mimeType};base64,${image.data}`}}))]});
+  } else {
+    if (images.length) content += `\n\n[${images.length} picture${images.length > 1 ? 's' : ''} attached, but this model cannot see pictures.]`;
+    history.push({role: 'user', content});
+  }
   const system = chatInstructions + (plan ? '\n\n' + PLAN_MODE_NOTE : '');
   const seen = new Map();
   let reply = '', continuations = 0, nudges = 0;

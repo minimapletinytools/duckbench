@@ -1,4 +1,4 @@
-// Render the original duck with the application's CAD viewer and screenshot its canvas.
+// Render the original duck with the application's 3D viewer and screenshot its canvas.
 // Requires Chrome, uv, and macOS's sips/iconutil for the desktop icon sizes.
 import {createServer} from 'vite';
 import {chromium} from 'playwright';
@@ -18,7 +18,7 @@ if(response.error)throw new Error(response.error);
 const server=await createServer({root,server:{host:'127.0.0.1',port:0},plugins:[{
  name:'icon-capture',configureServer(server){server.middlewares.use('/__icon',(_,res)=>{
   res.setHeader('Content-Type','text/html');
-  res.end('<!doctype html><html><head><link rel="stylesheet" href="/node_modules/three-cad-viewer/dist/three-cad-viewer.css"><style>*{background:transparent!important}html,body{margin:0}canvas{display:block}</style></head><body><div id="capture"></div></body></html>');
+  res.end('<!doctype html><html><head><style>html,body{margin:0;background:transparent}#capture{position:relative;width:1024px;height:1024px}</style></head><body><div id="capture"></div></body></html>');
  });},
 }]});
 await server.listen();
@@ -27,26 +27,17 @@ try{
  const page=await browser.newPage({viewport:{width:1250,height:1150},deviceScaleFactor:1,colorScheme:'light'});
  await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__icon`);
  await page.evaluate(async scene=>{
-  const {Display,Viewer}=await import('/node_modules/three-cad-viewer/dist/three-cad-viewer.esm.js');
-  const hideEdges=part=>{if(part.state)part.state=[1,0];for(const child of part.parts||[])hideEdges(child);};
-  hideEdges(scene);
-  const options={cadWidth:1024,height:1024,treeWidth:180,theme:'light',tools:false,up:'Z',axes:false,axes0:false,grid:[false,false,false],ortho:true};
-  const viewer=new Viewer(new Display(document.querySelector('#capture'),options),options,()=>{});
-  viewer.render(scene,{ambientIntensity:0.55,directIntensity:0.85,metalness:0.15,roughness:0.65},options);
-  viewer.setCameraPosition([0.4,-1,0.45],true);
-  viewer.setCameraZoom(1.35);
-  const target=viewer.getCameraTarget(),position=viewer.getCameraPosition();
-  target[2]-=4;position[2]-=4;
-  viewer.setCameraLocationSettings(position,null,target,null,false);
-  viewer.orientationMarker.setVisible(false);
-  // Keep a transparent canvas; the duck and its turquoise pond form the silhouette.
-  viewer.scene.background=null;
-  viewer.renderer.setClearColor(0xffffff,0);
-  viewer.update(true);
+  const {createViewer}=await import('/src/viewer/viewer.js');
+  // Only the duck, shaded, on a transparent canvas: the duck and its turquoise pond form the silhouette.
+  const viewer=createViewer(document.querySelector('#capture'),{plain:true});
+  viewer.show(scene);
+  // From the front right and a little above, aimed just below the model's centre.
+  const [x,y,z]=viewer.camera().target;
+  viewer.camera({position:[x+40,y-100,z+41],target:[x,y,z-4],zoom:1.35});
   window.iconViewer=viewer;
  },response.result.scene);
  await page.waitForTimeout(500);
- await page.locator('#capture canvas').first().screenshot({path:path.join(output,'duck.png'),omitBackground:true});
+ await page.locator('#capture canvas.dbv-canvas').screenshot({path:path.join(output,'duck.png'),omitBackground:true});
 }finally{await browser.close();await server.close();}
 
 for(const size of [16,32,48,64,128,180,192,256,512]){

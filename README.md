@@ -48,6 +48,15 @@ npm run package:viewer
 
 On Apple silicon the bundle is `release/viewer/mac-arm64/Duckbench Viewer.app`. Local macOS builds are unsigned. In the workbench, build a model and choose **Preview → Viewer HTML ↓** to share one offline, interactive file. Open the HTML directly in a WebGL-capable browser or in the desktop viewer. It contains the displayed geometry, its assembly tree, renderer and license notices. Source code and project history stay in the workbench. After a failed build the export uses the last successful preview.
 
+## The 3D view
+
+The preview is Duckbench's own Three.js viewer (`src/viewer/`). Its camera controls follow Kigumi's; its grid, dimensions and prompting at a spot take ideas from [QuiCAD](https://github.com/ppietak/QuiCAD).
+
+- **Camera:** drag with the left or right button to orbit, drag with the middle button (or Shift, Alt or Ctrl with the left) to pan, and scroll to zoom toward the pointer; a trackpad pinch zooms too. On a touch screen, one finger orbits and two pinch and pan. Click a face of the orientation cube to look along it, or drag the cube to orbit. Double-click the model to orbit about that point. **⤢** (or F) frames the model, or the selected part. **⟲** switches between turning about Z and tumbling freely.
+- **Picking:** hover to see the face, edge or vertex under the pointer; Tab cycles through what is there. Click to select it, Shift-click to add more of the same kind on the same part, Escape to clear. The card that opens measures the selection (area, diameter, length, normal, centre; the distance and angle between two) and gives a build123d selector that finds it, such as `result.edges().filter_by(Axis.Z)` or `result.faces().sort_by(Axis.Z)[-1]`. **Copy** copies it, **Insert** types it at the editor's cursor. When no selector by type, axis or size finds exactly the selection, the card says the index-based one it gives is fragile.
+- **Ask about a spot:** right-click a face, edge or vertex (or long-press on a touch screen, or choose **Ask agent** on the card) and type a request. The built-in agent gets the spot, the feature, its measurements and selector, and a picture of the view around it, so "make this hole 6 mm" means that hole.
+- **Parts**, **⟷** (dimensions: overall size and hole diameters) and **#** (grid) toggle the overlays. The parts list shows or hides each part and selects it.
+
 ## Agent, files and MCP
 
 In the explorer, use **Find a file** (⌘P / Ctrl+P), arrow keys and Enter to open a match. Right-click a Python file and choose **Set as run target** to keep building it while editing a helper. The run button shows the target. Browser builds use current project buffers. On desktop, **Save changed files & Run** writes edited project helpers before Python imports them.
@@ -81,7 +90,7 @@ The model picker uses the Duckbench Worker catalog. Chat charges the signed-in K
 | `read_file` | Read project text with line numbers, including unsaved edits. Continue at the line it names with `offset`. |
 | `describe_model` | Measure the displayed model and each labelled part: bounding box, volume, centre of mass, colour and topology counts. |
 | `screenshot` | Return a picture of the 3D preview, optionally after moving the camera to a preset view. |
-| `get_selection` | List the parts the user picked in the preview, newest first. |
+| `get_selection` | List what the user picked in the preview, newest first: whole parts, or faces, edges and vertices with their measurements and a build123d selector. |
 | `camera` | Read the preview's camera position, target, zoom and projection, or move it to a preset view, position, target or zoom. |
 | `build123d_api` | Look up the installed build123d's signatures, docstrings and source locations, or search its names. |
 | `build123d_source` | List, read or search the installed build123d's own source code (read-only). |
@@ -115,7 +124,7 @@ Duckbench supports one pending edit at a time. Batch edits and project-wide chec
 ## Implementation plan and current scope
 
 1. **Shared execution contract — implemented.** `python/runner.py` executes source with `__name__ == '__main__'`, a meaningful filename, and fresh script globals. `result` must be a build123d Shape or completed BuildPart/BuildSketch/BuildLine. Use `Compound(children=[...])` for assemblies. Missing/invalid results produce explicit errors. Desktop sibling imports run relative to the selected file; previously loaded project modules are invalidated on rerun.
-2. **Geometry adapter — implemented.** `ocp-tessellate` supplies scene hierarchy, triangles, CAD edges, and face/edge metadata to `three-cad-viewer`. The runner retains the last successful CAD shape for STEP/STL export. Render failures and script errors preserve the last successful viewport. Cancellation destroys the runner and requires rebuilding before export.
+2. **Geometry adapter — implemented.** `ocp-tessellate` supplies scene hierarchy, triangles, CAD edges, and face/edge metadata to Duckbench's own Three.js viewer (`src/viewer/`). The runner retains the last successful CAD shape for STEP/STL export. Render failures and script errors preserve the last successful viewport. Cancellation destroys the runner and requires rebuilding before export.
 3. **Host transports — implemented.** Electron owns a persistent native Python subprocess, communicating via JSON lines. Python and native stdout are routed to the log separately from the protocol. The web host runs the same adapter in a Pyodide worker with OCP.wasm, using worker messages. Both can be terminated to cancel a stuck build.
 4. **Workbench — implemented.** Kigumi-style panel shell with a resizable left explorer, a combined filename / Preview tab, optional split view, and collapsible Output panel. Monaco provides Python syntax highlighting, editing, undo, and keyboard navigation. The Agent button opens project-aware chat and MCP connection controls. Also includes open/save, model tree, orbit/pan/zoom, viewer inspection controls, logs/errors, STEP/STL export, and keyboard shortcuts. Desktop watches the selected file for external edits and updates the editor when there are no unsaved changes; the preview offers a refresh button instead of rebuilding automatically. Switching files retains their unsaved text in the current session. The preview fills the available center pane and resizes with the window and panel layout.
 5. **Validation and packaging — implemented for macOS arm64 and Chrome.** Native contract tests, actual browser execution/render/export/error/cancel checks, desktop render/export smoke, and production static build. See commands below.
@@ -126,7 +135,7 @@ The architecture follows Kigumi's host/runner boundaries. The implementation is 
 ## Versions and provenance
 
 - build123d 0.13.0 and ocp-tessellate 3.6.3; native dependency resolution is in `uv.lock`.
-- three-cad-viewer 5.1.3; JavaScript dependencies are in `package-lock.json`.
+- three.js 0.184.0; JavaScript dependencies are in `package-lock.json`.
 - Pyodide 314.0.7 from jsDelivr. Browser transitive Python/WASM dependencies are resolved by the upstream bootstrap and are not yet fully locked or vendored.
 - OCP.wasm bootstrap is vendored at the commit recorded in `public/ocp-bootstrap-source.json`; its license is alongside it.
 
@@ -145,6 +154,7 @@ TEST_URL=http://127.0.0.1:4173 npm run test:browser
 TEST_URL=http://127.0.0.1:4173 node tests/workbench.mjs
 TEST_URL=http://127.0.0.1:4173 node tests/projects.mjs
 TEST_URL=http://127.0.0.1:4173 node tests/viewer-workflow.mjs
+TEST_URL=http://127.0.0.1:4173 node tests/viewer.mjs
 TEST_URL=http://127.0.0.1:4173 node tests/shared-workspace.mjs
 ```
 
@@ -170,7 +180,7 @@ Right-click a file in Explorer (or press Shift+F10) and choose **Delete file…*
 
 ## License and credits
 
-Original Duckbench code is licensed under **Apache-2.0**; see [LICENSE](LICENSE) and [NOTICE](NOTICE). This matches build123d and ocp-tessellate and permits use alongside the MIT-licensed three-cad-viewer while retaining its notices. Third-party dependencies keep their own licenses; the application license does not relicense them or impose a license on models created with the app.
+Original Duckbench code is licensed under **Apache-2.0**; see [LICENSE](LICENSE) and [NOTICE](NOTICE). This matches build123d and ocp-tessellate, and permits use alongside MIT-licensed three.js while retaining its notices. Third-party dependencies keep their own licenses; the application license does not relicense them or impose a license on models created with the app.
 
 The **?** button beside the Duckbench title opens an offline page with upstream credits, full license texts, and notices. `npm run credits` regenerates `public/about.html` and `public/licenses/` from the installed JavaScript and Python packages. It runs automatically before development and production builds. Both the static web build and Electron package include these files, including build123d's NOTICE and Monaco's ThirdPartyNotices. The Electron bundle also retains the Python runtime's supplied notices and Chromium's third-party notices.
 
@@ -178,6 +188,6 @@ The **?** button beside the Duckbench title opens an offline page with upstream 
 
 ## App icon
 
-The icon is a screenshot of the original **Puddle the duck** model in `examples/duck.py`, rendered with three-cad-viewer without CAD overlays. `public/icons/duck.png` is the transparent 1024px capture; the smaller PNG, ICO, and ICNS files are derived from it. On macOS, run `npm run icons` to recapture it (requires installed Chrome, uv, and the built-in `sips` / `iconutil` tools). No generated illustration or third-party image is used.
+The icon is a screenshot of the original **Puddle the duck** model in `examples/duck.py`, rendered with Duckbench's viewer without CAD overlays. `public/icons/duck.png` is the transparent 1024px capture; the smaller PNG, ICO, and ICNS files are derived from it. On macOS, run `npm run icons` to recapture it (requires installed Chrome, uv, and the built-in `sips` / `iconutil` tools). No generated illustration or third-party image is used.
 
 `src/project-store.js` owns atomic project records and the active-project ID. Autosave reports success only after an IndexedDB transaction commits, and revision checks prevent stale tabs from overwriting newer edits. Storage failures keep the current editor contents available for download or ZIP export. Each project keeps a stable ID independent of its displayed name.

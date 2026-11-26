@@ -108,3 +108,38 @@ class RunnerTests(unittest.TestCase):
         for outside in ['../os.py', 'build123d/../../os.py', '/etc/hosts']:
             with self.assertRaises(ValueError):
                 runner.source_read(outside)
+
+    def test_picked_features_are_measured_and_selected(self):
+        code = '''from build123d import *
+with BuildPart() as p:
+    Box(30, 20, 10)
+    fillet(p.edges().filter_by(Axis.Z), 2)
+    with Locations((5, 0, 5)):
+        Hole(3)
+result = p.part
+'''
+        out = runner.run_model(code, 'picks.py', build_id=41)
+        leaf = out['scene']['parts'][0]
+        self.assertEqual(leaf['holes'], [{'a': [5.0, 0.0, 5.0], 'b': [5.0, 0.0, -5.0], 'd': 6.0}])
+        shape = runner._preview_leaves[41][leaf['id']]
+        # The scene numbers features as build123d does, so an index means the same face either side.
+        from viewer_import import feature_map
+        self.assertTrue(all(a.wrapped.IsSame(b.wrapped) for a, b in zip(feature_map(shape, 'face'), shape.faces())))
+        self.assertEqual(len(feature_map(shape, 'edge')), len(leaf['shape']['segments_per_edge']))
+        faces = feature_map(shape, 'face')
+        top = max(range(len(faces)), key=lambda i: faces[i].center().Z)
+        info = runner.dispatch({'method': 'feature', 'params': {'build_id': 41, 'part': leaf['id'], 'kind': 'face', 'indices': [top]}})
+        self.assertEqual(info['selector'], 'result.faces().sort_by(Axis.Z)[-1]')
+        self.assertEqual(info['features'][0]['normal'], [0.0, 0.0, 1.0])
+        edges = feature_map(shape, 'edge')
+        vertical = [i for i, e in enumerate(edges) if e.geom_type.name == 'LINE' and abs((e.position_at(1) - e.position_at(0)).normalized().Z) > 0.99]
+        self.assertEqual(runner.feature_info(41, leaf['id'], 'edge', vertical)['selector'], 'result.edges().filter_by(Axis.Z)')
+        hole = next(i for i, f in enumerate(faces) if f.geom_type.name == 'CYLINDER' and f.radius > 2.5)
+        hole_info = runner.feature_info(41, leaf['id'], 'face', [hole])
+        self.assertEqual(hole_info['features'][0]['diameter'], 6.0)
+        self.assertTrue(hole_info['robust'])
+        self.assertEqual(runner.feature_info(41, leaf['id'], 'face', [top, hole])['between']['distance'], 0.0)
+        with self.assertRaisesRegex(ValueError, 'no longer on screen'):
+            runner.feature_info(40, leaf['id'], 'face', [0])
+        with self.assertRaisesRegex(ValueError, 'not among them'):
+            runner.feature_info(41, leaf['id'], 'face', [999])

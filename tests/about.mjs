@@ -16,11 +16,12 @@ try{
   const frame=page.frameLocator('#about-dialog iframe');
   await frame.getByRole('heading',{name:'Application license'}).waitFor();
   assert.ok(await page.locator('#about-dialog').isVisible());
-  assert.ok(await frame.getByText('three-cad-viewer by Bernhard Walter',{exact:true}).isVisible());
-  const viewer=frame.locator('[data-component="three-cad-viewer"]');
+  assert.ok(await frame.getByText('QuiCAD by the QuiCAD authors',{exact:true}).isVisible());
+  assert.equal(await frame.locator('[data-component="three-cad-viewer"]').count(),0);
+  const viewer=frame.locator('[data-component="three"]');
   await viewer.locator(':scope > summary').click();
   await viewer.locator('details > summary').first().click();
-  assert.match(await viewer.locator('pre').first().textContent(),/Copyright 2021 Benrhard Walter/);
+  assert.match(await viewer.locator('pre').first().textContent(),/three\.js authors/);
   const build123d=frame.locator('[data-component="build123d"]');
   await build123d.locator(':scope > summary').click();
   assert.match(await build123d.textContent(),/originally derived from portions of the CadQuery/);

@@ -243,9 +243,9 @@ try {
       await assert.rejects(readFile(path.join(projectPath,'notes','axle.txt'),'utf8'));
       assert.match((await tool('run_build',{})).content[0].text,/Built .*model\.py without errors/);
       await page.waitForFunction(()=>document.querySelector('#model-state').textContent==='result',null,{timeout:90000});
-      const wheel = page.locator('.tv-node-label').filter({hasText:'Wheel 36'});
-      if (!await wheel.count()) await page.locator('.tv-nav-marker').first().click();
-      await wheel.waitFor();
+      const parts = page.locator('#cad-view').getByRole('button',{name:'Parts'});
+      if (await parts.getAttribute('aria-pressed') !== 'true') await parts.click();
+      await page.locator('.dbv-part-name').filter({hasText:'Wheel 36'}).waitFor();
       const build = JSON.parse((await tool('build_result',{})).content[0].text);
       assert.equal(build.runTarget,'model.py');
       assert.equal(build.lastSuccessfulId,build.lastAttempt.id);
