@@ -73,7 +73,7 @@ async function exercise(page, isDesktop) {
     assert.equal((await fetch(url, {method:'POST'})).status, 401);
     await client.connect(new StreamableHTTPClientTransport(new URL(url), {requestInit: {headers}}));
     assert.match(client.getInstructions(), /build123d/);
-    assert.deepEqual((await client.listTools()).tools.map(t => t.name).sort(), ['build123d_api','build123d_source','build_result','camera','delete_file','describe_model','edit_file','get_selection',
+    assert.deepEqual((await client.listTools()).tools.map(t => t.name).sort(), ['build123d_api','build123d_quickref','build123d_source','build_result','camera','check_fit','check_printability','delete_file','describe_model','edit_file','get_selection',
       'list_files','read_file','read_output','rename_file','run_build','screenshot','search_files','workbench_state','write_file']);
     const call = (name,args) => client.callTool({name, arguments: args});
     const call2 = call;
@@ -118,7 +118,13 @@ async function exercise(page, isDesktop) {
         assert.ok(body.model && body.tools.some(t => t.function.name === 'edit_file') && body.stream);
         seen.push(body.messages);
         const step = requests++;
-        if (step === 0) assert.match(body.messages.at(-1).content, /^\[Duckbench note: The active file is duck\.py[^]*What is in duck\.py\?$/);
+        if (step === 0) {
+          // The attached picture goes with the message, after its text.
+          const last = body.messages.at(-1);
+          assert.ok(Array.isArray(last.content), 'a message with a picture is text and image parts');
+          assert.match(last.content[0].text, /^\[Duckbench note: The active file is duck\.py[^]*What is in duck\.py\?$/);
+          assert.match(last.content[1].image_url.url, /^data:image\/jpeg;base64,/);
+        }
         if (step === 1) assert.match(body.messages.at(-1).content, /^duck\.py\n1\t# edited editor buffer/);
         if (step === 2) assert.match(body.messages.at(-1).content, /^Edited duck\.py \(1 replacement\)\./);
         const events = [
@@ -130,7 +136,12 @@ async function exercise(page, isDesktop) {
         return route.fulfill({status:200, headers:{'content-type':'text/event-stream'}, body:sse(events)});
       });
       await page.getByLabel('Message to agent').fill('What is in duck.py?');
+      // A picture attached to the message: a 2×2 PNG.
+      await page.locator('[data-id=files]').setInputFiles({name:'sketch.png', mimeType:'image/png', buffer:Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP4zwAE/xkgFAAb8gP91pbyKwAAAABJRU5ErkJggg==', 'base64')});
+      await page.getByRole('list', {name:'Attached pictures'}).getByRole('img', {name:'sketch.png'}).waitFor();
       await page.getByRole('button', {name:'Send', exact:true}).click();
+      await page.getByRole('list', {name:'Attached pictures'}).waitFor({state:'hidden'});
       const review = page.getByRole('region', {name:'Proposed edit'});
       await review.getByRole('button', {name:'Apply edit'}).waitFor();
       assert.match(await review.textContent(), /− # edited editor buffer[^]*\+ # agent-edited editor buffer/);
@@ -263,6 +274,14 @@ try {
       assert.match(await text('build123d_source',{search:'^class Cylinder\\b'}), /^build123d\/objects_part\.py:\d+: class Cylinder/);
       assert.match(await text('build123d_source',{path:'build123d.objects_part',limit:3}), /^build123d\/objects_part\.py \(build123d [^)]+\)\n1\t[^]*read on from line 4\)$/);
       assert.equal((await tool('build123d_source',{path:'../os.py'})).isError, true);
+      assert.match(await text('build123d_quickref'), /^# build123d quick reference[^]*Selector operators/);
+      const fit = JSON.parse(await text('check_fit',{min_clearance:1}));
+      assert.equal(fit.parts, 1);
+      assert.deepEqual(fit.overlaps, []);
+      const printable = JSON.parse(await text('check_printability',{min_wall:6}));
+      assert.equal(printable.parts[0].part, 'Wheel 36');
+      assert.equal(printable.parts[0].thinnest_wall.thickness, 5);
+      assert.ok(printable.parts[0].thin_walls.length && !printable.ok);
       const aimed = JSON.parse(await text('camera',{view:'front',target:[0,0,2.5],zoom:2}));
       assert.deepEqual(aimed.target, [0,0,2.5]);
       assert.equal(aimed.zoom, 2);

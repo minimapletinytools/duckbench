@@ -19,7 +19,9 @@ Common operations: \`extrude\`, \`revolve\`, \`loft\`, \`sweep\`, \`offset\`, \`
 
 For an exact signature or docstring, ask build123d_api rather than guessing: build123d's API changes
 between versions and the tool reads the installed one. To see how something works or which function
-fits, read or search build123d's own source with build123d_source. Find things with search_files rather than
+fits, read or search build123d's own source with build123d_source; build123d_quickref lists the
+mistakes models most often make. For an assembly, check_fit finds overlapping parts and tight
+gaps; for a part to 3D print, check_printability finds thin walls and steep overhangs. Find things with search_files rather than
 reading whole files. Write sizes as named constants near the top of the file so they are easy to change.
 
 ---

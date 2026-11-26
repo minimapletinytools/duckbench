@@ -18,7 +18,7 @@ try {
   await page.locator('#tab-source').click();
   await page.locator('#editor .view-lines').click();
   await page.keyboard.press(selectAll);
-  await page.keyboard.insertText('from build123d import *\nplate = Box(80, 80, 4) - Pos(30, 30, 0) * Cylinder(3, 4)\nplate.label = "Plate"\nresult = plate\n');
+  await page.keyboard.insertText('from build123d import *\n# --- Plate\nWIDTH = 80  # plate width, mm\nTHICKNESS = 4\nplate = Box(WIDTH, WIDTH, THICKNESS) - Pos(30, 30, 0) * Cylinder(3, THICKNESS)\nplate.label = "Plate"\nresult = plate\n');
   await page.locator('#run').click();
   await page.waitForFunction(() => document.querySelector('#model-state').textContent === 'result', null, {timeout: 240000});
   const view = page.locator('#cad-view');
@@ -93,8 +93,24 @@ try {
   await spot.waitFor({state: 'hidden'});
   // Signed out, the request stays in the message box with a prompt to sign in.
   assert.equal(await page.getByLabel('Message to agent').inputValue(), 'Make this plate thicker');
+  // The parameters panel edits WIDTH in the file and rebuilds.
+  await page.locator('#tab-preview').click();
+  const toggle = page.getByRole('button', {name: 'Parameters (2)'});
+  await toggle.click();
+  const panel = page.getByRole('region', {name: 'Parameters'});
+  assert.match(await panel.textContent(), /Plate[^]*WIDTH[^]*plate width, mm[^]*THICKNESS/);
+  const width = panel.getByLabel('WIDTH: plate width, mm');
+  await width.fill('90');
+  await width.press('Enter');
+  await view.locator('.dim-label').filter({hasText: /^90 mm$/}).first().waitFor({timeout: 120000});
+  await page.locator('#tab-source').click();
+  await page.waitForFunction(() => /WIDTH\s*=\s*90\s+# plate width, mm/.test(document.querySelector('#editor .view-lines').textContent.replace(/\u00a0/g, ' ')));
+  // Arrow keys step by the last digit written.
+  await page.locator('#tab-preview').click();
+  await panel.getByLabel('THICKNESS').press('ArrowUp');
+  await view.locator('.dim-label').filter({hasText: /^5 mm$/}).first().waitFor({timeout: 120000});
   assert.deepEqual(errors, []);
-  console.log('Viewer: dimensions, hover, face pick, measurements, selector insert, shift and Escape, orbit, parts, cube and spot prompt passed.');
+  console.log('Viewer: dimensions, hover, face pick, measurements, selector insert, shift and Escape, orbit, parts, cube, spot prompt and parameters passed.');
 } finally {
   await browser.close();
 }

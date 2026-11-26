@@ -143,3 +143,32 @@ result = p.part
             runner.feature_info(40, leaf['id'], 'face', [0])
         with self.assertRaisesRegex(ValueError, 'not among them'):
             runner.feature_info(41, leaf['id'], 'face', [999])
+
+    def test_fit_and_printability_checks(self):
+        code = '''from build123d import *
+base = Box(40, 40, 4, align=(Align.CENTER, Align.CENTER, Align.MIN)); base.label = "Base"
+post = Pos(0, 0, 3) * Cylinder(3, 10, align=(Align.CENTER, Align.CENTER, Align.MIN)); post.label = "Post"
+cap = Pos(23.5, 0, 0) * Box(5, 10, 2, align=(Align.CENTER, Align.CENTER, Align.MIN)); cap.label = "Cap"
+shelf = Pos(-45, 0, 0) * (Box(20, 20, 20, align=(Align.CENTER, Align.CENTER, Align.MIN)) - Pos(0, 3, 2) * Box(20, 20, 14, align=(Align.CENTER, Align.CENTER, Align.MIN)))
+shelf.label = "Shelf"
+fin = Pos(0, 40, 0) * Box(0.8, 20, 10, align=(Align.CENTER, Align.CENTER, Align.MIN)); fin.label = "Fin"
+result = Compound(children=[base, post, cap, shelf, fin])
+'''
+        runner.run_model(code, 'checks.py', build_id=51)
+        fit = runner.dispatch({'method': 'fit', 'params': {'build_id': 51, 'min_clearance': 2.0}})
+        self.assertEqual([o['parts'] for o in fit['overlaps']], [['Base', 'Post']])
+        self.assertAlmostEqual(fit['overlaps'][0]['volume'], 28.2743, places=3)
+        self.assertEqual([(c['parts'], c['distance']) for c in fit['too_close']], [(['Base', 'Cap'], 1.0)])
+        self.assertFalse(fit['ok'])
+        report = {p['part']: p for p in runner.dispatch({'method': 'printability', 'params': {'build_id': 51}})['parts']}
+        self.assertEqual(report['Fin']['thinnest_wall']['thickness'], 0.8)
+        self.assertTrue(report['Fin']['thin_walls'])
+        self.assertEqual(report['Base']['thin_walls'], [])
+        self.assertEqual(report['Base']['overhangs'], [])  # its underside rests on the build plate
+        roof = report['Shelf']['overhangs'][0]
+        self.assertEqual((roof['area'], roof['max_angle']), (340.0, 90.0))
+        only = runner.check_printability(51, part='Fin', min_wall=0.5)
+        self.assertEqual([p['part'] for p in only['parts']], ['Fin'])
+        self.assertTrue(only['ok'])
+        with self.assertRaisesRegex(ValueError, 'No solid part'):
+            runner.check_printability(51, part='Nothing')

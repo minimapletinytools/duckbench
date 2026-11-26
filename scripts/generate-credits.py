@@ -100,6 +100,7 @@ html += f'<h1>Duckbench <span class="version">{escape(package["version"])}</span
 html += '<h2>Application license</h2><p>Original Duckbench code is licensed under <strong>Apache License 2.0</strong>. You may use, modify and distribute it, including commercially, subject to the license terms. Third-party components keep their own licenses. This application license does not impose a license on models you create.</p>'
 html += '<h2>Built with open source</h2><p>The 3D view is Duckbench’s own, drawn with <strong>Three.js</strong>. Its camera controls follow Kigumi’s, and its grid, dimensions and spot prompts take ideas from <strong>QuiCAD by the QuiCAD authors</strong>. Parts are tessellated by <strong>ocp-tessellate by Bernhard Walter</strong>. Thank you to the authors and contributors whose work makes this app possible.</p>'
 credits = [
+ ('CAD Khana','The CAD Khana authors','The build123d quick reference, and the approach of the fit and printability checks','https://github.com/cyberchitta/cad-khana'),
  ('QuiCAD','The QuiCAD authors','Ideas for the 3D view: grid, dimensions and prompting at a spot','https://github.com/ppietak/QuiCAD'),
  ('ocp-tessellate','Bernhard Walter','CAD tessellation and scene conversion','https://github.com/bernhard-42/ocp-tessellate'),
  ('build123d','The build123d Contributors','Parametric modeling in Python','https://github.com/gumyr/build123d'),

@@ -97,6 +97,7 @@ export function agentProject({workspace, documents, filename, preview, desktop, 
     picks: limit => host.picks(limit),
     api: args => host.api(args),
     source: args => host.source(args),
+    check: (method, args) => host.check(method, args),
     camera: args => host.camera(args),
     /** Apply a change the panel approved, checking the file still holds what the agent read. */
     async apply(change) {

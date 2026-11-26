@@ -10,7 +10,7 @@ import {conversations} from './conversations.js';
 const MODES = [['ask', 'Ask before edits'], ['auto', 'Edit automatically'], ['plan', 'Plan only (no edits)']];
 const EDIT_TOOLS = new Set(['edit_file', 'write_file', 'rename_file']);
 
-export function createAgentPanel(project, {run, runLabel, show, close}) {
+export function createAgentPanel(project, {run, runLabel, show, close, notes = () => ''}) {
   const element = document.createElement('section');
   element.className = 'agent-panel';
   const icon = path => `<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
@@ -40,7 +40,8 @@ export function createAgentPanel(project, {run, runLabel, show, close}) {
     <section class="agent-proposal" aria-label="Proposed edit" hidden><strong data-id="target"></strong><details open><summary data-id="kind">Review edit</summary><pre class="removed" data-id="original"></pre><pre class="added" data-id="replacement"></pre></details><div><button data-id="apply">Apply edit</button> <button data-id="applyRun">Apply &amp; Run</button> <button data-id="discard">Discard</button></div></section>
     <ol data-id="todos" class="agent-todos" aria-label="Agent to-do list" hidden></ol>
     <div class="agent-footer"><form class="agent-compose"><div data-id="mentions" class="agent-mentions" hidden></div>
-    <div class="input-box"><textarea aria-label="Message to agent" rows="2" placeholder="Ask about this project, or @ to reference a file"></textarea>
+    <ul data-id="attachments" class="agent-attachments" aria-label="Attached pictures" hidden></ul>
+    <div class="input-box"><button type="button" data-id="attach" class="attach-btn" aria-label="Attach pictures" title="Attach pictures (or paste or drop them here)">${icon('<path d="M10.5 4.5l-5 5a1.4 1.4 0 0 0 2 2l5.5-5.5a2.8 2.8 0 0 0-4-4L3.5 7.5a4.2 4.2 0 0 0 6 6l4-4"/>')}</button><input type="file" data-id="files" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden><textarea aria-label="Message to agent" rows="2" placeholder="Ask about this project, or @ to reference a file"></textarea>
     <button data-id="send" class="send-btn" aria-label="Send" title="Send (Enter)" disabled>${icon('<path d="M2.5 13.5l11-5.5-11-5.5 1.8 5.5zM4.3 8h5"/>')}</button><button type="button" data-id="cancel" class="send-btn stop-btn" aria-label="Stop" title="Stop" hidden>${icon('<rect x="4.5" y="4.5" width="7" height="7" rx="1" fill="currentColor" stroke="none"/>')}</button></div>
     <output data-id="status" role="status"></output></form>
     <div class="agent-options"><select data-id="mode" aria-label="Edit permissions" title="Whether the agent asks before changing files">${MODES.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></div>
@@ -83,10 +84,12 @@ export function createAgentPanel(project, {run, runLabel, show, close}) {
   }
   function persist(){
     if(!storage||!record)return;
-    record.history=history.slice();record.draft=input.value;
+    // Pictures stay out of storage: they would fill it. The model has already seen them.
+    const kept=history.map(entry=>Array.isArray(entry.content)?{...entry,content:entry.content.map(part=>part.type==='image_url'?{type:'text',text:'[picture not kept]'}:part)}:entry);
+    record.history=kept;record.draft=input.value;
     try{storage.save(record);}catch{
       // Keep the visible transcript; drop the oldest model context first.
-      try{record.history=history.slice(-20);storage.save(record);}catch{ui.status.textContent='Conversation storage is full or unavailable.';}
+      try{record.history=kept.slice(-20);storage.save(record);}catch{ui.status.textContent='Conversation storage is full or unavailable.';}
     }
   }
   function restore(next) {
@@ -389,6 +392,8 @@ export function createAgentPanel(project, {run, runLabel, show, close}) {
     if (attempt) parts.push(attempt.status === 'failed' ? `The last build of ${attempt.target} failed: ${attempt.error}` : `The last build of ${attempt.target}: ${attempt.status}.`);
     else parts.push('Nothing has been built yet.');
     if (preview?.stale) parts.push('The code has changed since the model on screen was built.');
+    const changed = notes();
+    if (changed) parts.push(changed);
     const pick = project.picks(1).picks?.[0];
     if (pick) parts.push(`Last picked in the 3D preview: ${pick.kind === 'part' ? 'the part' : 'the ' + pick.label + ' of'} ${pick.name}` +
       (pick.info?.selector ? `, selected by ${pick.info.selector}` : '') + '.');
@@ -432,23 +437,99 @@ export function createAgentPanel(project, {run, runLabel, show, close}) {
     note.append(button);
   }
 
+  // Pictures the user attached to the next message: a photo of a sketch, a screenshot of a part.
+  const MAX_PICTURES = 4;
+  let pictures = [];
+  function showPictures() {
+    ui.attachments.replaceChildren(...pictures.map((picture, index) => {
+      const item = document.createElement('li');
+      const image = document.createElement('img');
+      image.src = 'data:' + picture.mimeType + ';base64,' + picture.data;
+      image.alt = picture.name;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = '×';
+      remove.setAttribute('aria-label', 'Remove ' + picture.name);
+      remove.onclick = () => { pictures.splice(index, 1); showPictures(); controls(); };
+      item.append(image, remove);
+      return item;
+    }));
+    ui.attachments.hidden = !pictures.length;
+  }
+  /** A picture file as JPEG base64, at most 1568 pixels on its longer side (what models see in full). */
+  async function readPicture(file) {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, 1568 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#fff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close?.();
+    const url = canvas.toDataURL('image/jpeg', 0.85);
+    return {name: file.name || 'Pasted picture', mimeType: 'image/jpeg', data: url.slice(url.indexOf(',') + 1)};
+  }
+  async function addPictures(files) {
+    const images = [...files].filter(file => file.type.startsWith('image/'));
+    if (!images.length) return false;
+    for (const file of images) {
+      if (pictures.length >= MAX_PICTURES) { ui.status.textContent = `Attach at most ${MAX_PICTURES} pictures to one message.`; break; }
+      try { pictures.push(await readPicture(file)); }
+      catch { ui.status.textContent = `Could not read ${file.name || 'that picture'}.`; }
+    }
+    showPictures();
+    controls();
+    return true;
+  }
+  ui.attach.onclick = () => ui.files.click();
+  ui.files.onchange = () => { void addPictures(ui.files.files); ui.files.value = ''; };
+  input.addEventListener('paste', event => {
+    const files = [...event.clipboardData?.files || []];
+    if (files.some(file => file.type.startsWith('image/'))) { event.preventDefault(); void addPictures(files); }
+  });
+  const compose = element.querySelector('.agent-compose');
+  compose.addEventListener('dragover', event => {
+    if ([...event.dataTransfer?.items || []].some(item => item.type.startsWith('image/'))) { event.preventDefault(); compose.classList.add('is-dropping'); }
+  });
+  compose.addEventListener('dragleave', () => compose.classList.remove('is-dropping'));
+  compose.addEventListener('drop', event => {
+    compose.classList.remove('is-dropping');
+    if ([...event.dataTransfer?.files || []].some(file => file.type.startsWith('image/'))) { event.preventDefault(); void addPictures(event.dataTransfer.files); }
+  });
+
   // What a prompt from the 3D view brings along: a note about the spot, and a picture of it.
   let attachedToNext = null;
   element.querySelector('form').onsubmit = async event => {
     event.preventDefault();
     const prompt = input.value.trim();
-    const extra = attachedToNext;
-    attachedToNext = null;
     if (!prompt || turn) return;
     if (!user) {
       ui.status.textContent='Sign in below to use the built-in agent.';
       return;
     }
+    const extra = attachedToNext;
+    attachedToNext = null;
+    const attached = pictures;
+    pictures = [];
+    showPictures();
     const active = turn = new AbortController();
     const changes = turnChanges = new Map();
     input.value = '';ui.mentions.hidden=true;
     controls();
-    message('You', prompt);
+    const mine = message('You', prompt);
+    if (attached.length) {
+      const row = document.createElement('div');
+      row.className = 'message-pictures';
+      for (const picture of attached) {
+        const image = document.createElement('img');
+        image.src = 'data:' + picture.mimeType + ';base64,' + picture.data;
+        image.alt = picture.name;
+        row.append(image);
+      }
+      mine.append(row);
+    }
     ui.status.textContent = 'Thinking…';
     const chips = new Map();
     let bubble = null, step = -1, text = '', frame = 0;
@@ -461,7 +542,7 @@ export function createAgentPanel(project, {run, runLabel, show, close}) {
     }
     try {
       await chat({request: account.request, project, history, prompt, signal: active.signal,
-        context: contextNote() + (extra?.note ? ' ' + extra.note : ''), images: extra?.images || [],
+        context: contextNote() + (extra?.note ? ' ' + extra.note : ''), images: [...attached, ...extra?.images || []],
         model: models.find(model => model.openrouter === ui.model.value), plan: ui.mode.value === 'plan', changed: changedFiles,
         onText: (delta, at) => {
           if (at !== step) { settle(); step = at; text = ''; }

@@ -9,6 +9,7 @@ import {installAbout} from './about.js';
 import {PanelShell} from './panels.js';
 import {createEditor} from './editor.js';
 import {createCadPanel} from './cad-panel.js';
+import {createParametersPanel} from './parameters.js';
 import {createRuntime} from './runtime.js';
 import {createViewerFeedback} from './viewer-feedback.js';
 import {explorerDownload} from './explorer-download.js';
@@ -25,7 +26,7 @@ const disposeAbout=installAbout();
 $('toolbar').innerHTML='<button id="open-folder">Open folder</button><button id="open">Open file</button>'+(window.desktop?'<button id="save">Save</button><span class="toolbar-divider"></span>':'')+'<button id="run" class="primary" disabled>▶ Run</button><button id="cancel" disabled>■ Stop</button><button id="step" disabled>STEP ↓</button><button id="stl" disabled>STL ↓</button><button id="export-viewer" disabled title="Export an offline interactive viewer">Viewer HTML ↓</button>';
 const explorer=element('explorer-panel','<div class="panel-toolbar"><strong>Explorer</strong><button id="new-file" class="new-file-button" title="Create a blank Python file"><span aria-hidden="true">＋</span> New file</button></div><div id="workspace-name" class="workspace-name">OPEN FILES</div><small id="storage-kind" class="storage-kind"></small><input id="find-file" class="explorer-search" type="search" aria-label="Find a file" placeholder="Find a file…" /><div id="file-tree" class="explorer-tree" role="tree"></div><div class="explorer-hint">Open a folder to browse your project.</div>');
 const source=element('editor-panel','<div class="panel-toolbar"><span id="filename">duck.py</span><span id="dirty" hidden>●</span><span class="panel-spacer"></span><span>Python</span></div><div id="editor" class="monaco-host"></div>');
-const preview=element('viewer-panel','<div class="panel-toolbar"><span id="model-state">No model yet</span><span class="panel-spacer"></span><span id="export-source" hidden></span><span id="elapsed"></span></div><div class="viewport-wrap"><div id="cad-view"></div><div id="empty-state"><h2>Please run your model to preview</h2><button id="empty-run" class="primary" disabled>▶ Run</button></div></div><div id="error-banner" role="alert" hidden><span id="error-message"></span><button id="dismiss-error" aria-label="Dismiss error">×</button></div>');
+const preview=element('viewer-panel','<div class="panel-toolbar"><span id="model-state">No model yet</span><span class="panel-spacer"></span><button id="toggle-parameters" type="button" aria-pressed="false" title="Edit the UPPER_CASE number constants of the model and rebuild">Parameters</button><span id="export-source" hidden></span><span id="elapsed"></span></div><div class="viewport-wrap"><div id="cad-view"></div><div id="empty-state"><h2>Please run your model to preview</h2><button id="empty-run" class="primary" disabled>▶ Run</button></div></div><div id="error-banner" role="alert" hidden><span id="error-message"></span><button id="dismiss-error" aria-label="Dismiss error">×</button></div>');
 const consolePanel=element('console-panel','<div class="panel-toolbar"><strong>OUTPUT</strong><span class="panel-spacer"></span><button id="clear-log">Clear</button></div><pre id="logs"></pre>');
 shell.register({id:'explorer',title:'Explorer',slot:'left',element:explorer});
 shell.register({id:'source',title:'Code',slot:'center',element:source});
@@ -61,6 +62,8 @@ let browserFolders=new Set(projectRecord?.folders||[]);
 let workspace=projectRecord?{name:projectRecord.name}:null,browserFiles={...projectRecord?.files},treeEntries=projectRecord?browserTree(projectRecord.files):[];
 let expandedFolders=new Set(projectRecord?.expanded||[]),runTarget=projectRecord?.runTarget||null;
 let lastScene=null,lastAttempt=null,importedModel=false;
+// The parameters panel (parameters.js), and the changes made in it that the agent has not heard of yet.
+let parameters=null;const parameterNotes=[];
 const basename=path=>path?.split(/[\\/]/).pop()||'';
 const runPath=()=>runTarget||filename;
 function folderPrefs(){return 'duckbench.folder.'+workspace.root;}
@@ -188,6 +191,12 @@ const project=agentProject({
   picks:limit=>({picks:cad.picks(limit)}),
   api:args=>{if(!runtime)throw new Error('Python is not available.');return runtime.call('api',args);},
   source:args=>{if(!runtime)throw new Error('Python is not available.');return runtime.call('source',args);},
+  check:(method,args)=>{
+   if(!runtime)throw new Error('Python is not available.');
+   if(!hasModel)throw new Error('No model is shown. Build one first (run_build).');
+   if(importedModel)throw new Error('The preview shows '+basename(builtFilename)+', opened from a file rather than built, so it cannot be checked.');
+   return runtime.call(method,{build_id:lastScene.build,...args});
+  },
   camera:args=>{const camera=cad.camera(args);return {...camera,...(stalePreview()?{note:'The code has changed since this model was built.'}:{})};},
   write:agentWrite,remove:removeFile,rename:agentRename,
   /** Save one buffer to disk (desktop), for an MCP client's change. */
@@ -197,10 +206,23 @@ const project=agentProject({
 });
 const agent=createAgentPanel(project,{
  run,runLabel,
+ notes:()=>{const changed=parameterNotes.splice(0);return changed.length?'Since the last message the user changed parameters in the panel: '+changed.join('; ')+'.':'';},
  show:()=>{if($('right-slot').hidden)shell.toggle('right');},
  close:()=>{shell.toggle('right');$('toggle-agent').focus();},
 });
 shell.register({id:'agent',title:'Agent',slot:'right',element:agent.element});
+/** The file whose parameters the panel edits: the run target when it is open, else the active file. */
+const parameterFile=()=>documents.has(runPath())?runPath():filename;
+parameters=createParametersPanel(preview.querySelector('.viewport-wrap'),$('toggle-parameters'),{
+ source:()=>{const path=parameterFile(),doc=documents.get(path);return doc?{name:basename(path),code:doc.code}:null;},
+ apply:async({name,from,to,code})=>{
+  const path=parameterFile();
+  try{await agentWrite(project.relative(path)||path,code);}catch(error){status(error.message);return;}
+  parameterNotes.push(`${name} ${from} → ${to} in ${basename(path)}`);
+  if(parameterNotes.length>20)parameterNotes.splice(0,parameterNotes.length-20);
+  run();
+ },
+});
 cad.setOptions({
  // The Python side measures what was picked in the build on screen and finds a selector for it.
  describe:({part,kind,indices})=>{
@@ -305,6 +327,7 @@ function sync(){
    const doc=documents.get(filename);if(doc.code!==doc.saved)localStorage.setItem('duckbench.desktopDraft',JSON.stringify({filename,...doc}));else localStorage.removeItem('duckbench.desktopDraft');}catch{}}
  else scheduleCache();
  updatePreview();
+ parameters?.refresh();
 }
 function log(text){$('logs').textContent+=String(text)+'\n';$('logs').scrollTop=$('logs').scrollHeight;}
 function status(text){$('runtime-status').textContent=text;if(busy){progressMessage=text;updatePreview();}}

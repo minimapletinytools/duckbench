@@ -410,6 +410,153 @@ def feature_info(build_id=None, part=None, kind="face", indices=()):
     return result
 
 
+def _solid_leaves(build_id, part=None):
+    """The displayed build's parts that have volume, by name, located as drawn."""
+    leaves = _preview_leaves.get(build_id)
+    if leaves is None:
+        raise ValueError("Build the model first: the checks measure the model on screen.")
+    found = {}
+    for path, shape in leaves.items():
+        if part is not None and part not in (path, path.rsplit("/", 1)[-1]):
+            continue
+        try:
+            if shape.solids() and shape.volume > 1e-9:
+                found[path] = shape
+        except Exception:
+            continue
+    if part is not None and not found:
+        raise ValueError(f"No solid part {part} in the model on screen.")
+    return found
+
+
+def check_fit(build_id=None, min_clearance=0.0, limit=60):
+    """Which parts overlap, by how much, and which come closer than `min_clearance` millimetres."""
+    parts = list(_solid_leaves(build_id).items())[:limit]
+    name = lambda path: path.rsplit("/", 1)[-1]
+    overlaps, close, checked = [], [], 0
+    for i, (path_a, a) in enumerate(parts):
+        box_a = a.bounding_box()
+        for path_b, b in parts[i + 1:]:
+            box_b = b.bounding_box()
+            # Boxes further apart than the clearance cannot overlap or come too close.
+            gap = max(box_b.min.X - box_a.max.X, box_a.min.X - box_b.max.X,
+                      box_b.min.Y - box_a.max.Y, box_a.min.Y - box_b.max.Y,
+                      box_b.min.Z - box_a.max.Z, box_a.min.Z - box_b.max.Z)
+            if gap > max(min_clearance, 0) + 1e-6:
+                continue
+            checked += 1
+            shared, common = 0.0, None
+            try:
+                # intersect gives a ShapeList in build123d 0.13; & gives the common solid.
+                common = a & b
+                shared = common.volume if common is not None else 0.0
+            except Exception:
+                pass
+            if shared > 1e-6:
+                center = common.center()
+                overlaps.append({"parts": [name(path_a), name(path_b)], "paths": [path_a, path_b],
+                                 "volume": round(shared, 4), "at": _point(center) if center is not None else None})
+                continue
+            distance = a.distance_to(b)
+            if distance < min_clearance - 1e-9 or distance < 1e-6:
+                close.append({"parts": [name(path_a), name(path_b)], "paths": [path_a, path_b], "distance": round(distance, 4),
+                              "touching": distance < 1e-6})
+    return {"parts": len(parts), "pairs_checked": checked, "min_clearance": min_clearance,
+            "overlaps": overlaps, "too_close": close,
+            "ok": not overlaps and not [c for c in close if not c["touching"] or min_clearance > 0]}
+
+
+def _facets(face, tolerance=0.05, angular=0.15):
+    """A face's triangles as (centroid, outward unit normal, area)."""
+    from build123d import Vector
+    points, triangles = face.tessellate(tolerance, angular)
+    for i, j, k in triangles:
+        a, b, c = points[i], points[j], points[k]
+        cross = (b - a).cross(c - a)
+        area = cross.length / 2
+        if area < 1e-9:
+            continue
+        yield (a + b + c) / 3, cross.normalized(), area
+
+
+def check_printability(build_id=None, part=None, min_wall=1.2, max_overhang=45.0, up=(0, 0, 1), samples=300):
+    """FDM printability of each solid part: overhangs past `max_overhang` degrees from vertical, and
+    walls thinner than `min_wall` millimetres, printed with `up` as the build direction.
+
+    After cad-khana's checks (github.com/cyberchitta/cad-khana, Apache-2.0): a wall is measured by a
+    ray cast inward along a facet's normal, from where it enters the material to where it next leaves;
+    an overhang is downward-facing surface steeper than the limit, except what rests on the build plate.
+    """
+    import math
+    from build123d import Axis, Vector
+    up = Vector(*up).normalized()
+    report = []
+    for path, shape in _solid_leaves(build_id, part).items():
+        faces = shape.faces()
+        heights = [v.dot(up) for v in (Vector(p) for p in shape.vertices())] or [0.0]
+        plate = min(min(heights), shape.bounding_box().min.dot(up) if up == Vector(0, 0, 1) else min(heights))
+        overhangs, facets = [], []
+        for index, face in enumerate(faces):
+            area_over, steepest, weighted = 0.0, 0.0, Vector()
+            for centroid, normal, area in _facets(face):
+                facets.append((area, centroid, normal, index))
+                down = -normal.dot(up)
+                if down <= 1e-6:
+                    continue
+                if abs(centroid.dot(up) - plate) < 1e-3 and down > 0.999:
+                    continue  # on the build plate
+                angle = math.degrees(math.asin(min(1.0, down)))
+                if angle > max_overhang + 1e-6:
+                    area_over += area
+                    steepest = max(steepest, angle)
+                    weighted += centroid * area
+            if area_over > 0.05:
+                overhangs.append({"face": index, "type": face.geom_type.name.lower(), "area": round(area_over, 3),
+                                  "max_angle": round(steepest, 1), "at": _point(weighted / area_over, 3)})
+        # Walls: rays from the largest facets, spread across every face.
+        facets.sort(key=lambda f: -f[0])
+        chosen, per_face = [], {}
+        for facet in facets:
+            if per_face.get(facet[3], 0) >= max(2, samples // max(1, len(faces))):
+                continue
+            per_face[facet[3]] = per_face.get(facet[3], 0) + 1
+            chosen.append(facet)
+            if len(chosen) >= samples:
+                break
+        thinnest, thin = None, {}
+        for area, centroid, normal, index in chosen:
+            inward = -normal
+            origin = centroid - inward * 0.02
+            try:
+                hits = shape.find_intersection_points(Axis(tuple(origin), tuple(inward)))
+            except Exception:
+                continue
+            crossings = sorted(((hit - origin).dot(inward), hit, n.normalized().dot(inward)) for hit, n in hits)
+            forward = [c for c in crossings if c[0] >= -1e-9]
+            if not forward or forward[0][2] >= 0:
+                continue
+            leaving = next((c for c in forward[1:] if c[2] > 0), None)
+            if leaving is None:
+                continue
+            thickness = leaving[0] - forward[0][0]
+            if thickness <= 1e-4:
+                continue
+            sample = {"face": index, "thickness": round(thickness, 3), "at": _point(forward[0][1], 3), "to": _point(leaving[1], 3)}
+            if thinnest is None or thickness < thinnest["thickness"]:
+                thinnest = sample
+            if thickness < min_wall and (index not in thin or thickness < thin[index]["thickness"]):
+                thin[index] = sample
+        overhangs.sort(key=lambda o: -o["area"])
+        report.append({
+            "part": path.rsplit("/", 1)[-1], "path": path, "volume": round(shape.volume, 3),
+            "thinnest_wall": thinnest, "thin_walls": sorted(thin.values(), key=lambda t: t["thickness"])[:20],
+            "overhangs": overhangs[:20], "overhang_area": round(sum(o["area"] for o in overhangs), 3),
+            "rays": len(chosen),
+        })
+    return {"min_wall": min_wall, "max_overhang": max_overhang, "up": _point(up),
+            "parts": report, "ok": all(not p["thin_walls"] and not p["overhangs"] for p in report)}
+
+
 def dispatch(request):
     if request["method"] == "run":
         return run_model(**request["params"])
@@ -419,6 +566,10 @@ def dispatch(request):
         return describe_model(**request["params"])
     if request["method"] == "api":
         return api_lookup(**request["params"])
+    if request["method"] == "fit":
+        return check_fit(**request["params"])
+    if request["method"] == "printability":
+        return check_printability(**request["params"])
     if request["method"] == "feature":
         return feature_info(**request["params"])
     if request["method"] == "source":

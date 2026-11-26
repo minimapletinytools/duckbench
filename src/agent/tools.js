@@ -2,6 +2,7 @@
 // Each runs against the project interface from ./project.js. A change goes through the panel's gate for the
 // built-in agent (project.change: review, permission mode, Undo) and straight in for MCP clients (project.commit).
 import {PROMPT} from './prompt.js';
+import {QUICKREF} from './quickref.js';
 
 function paragraphs(text) {
   return text.trim().split(/\n\s*\n/).map(part => part.replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n\n');
@@ -159,6 +160,23 @@ export const tools = [
       if (result.files) return `build123d ${result.version}\n` + result.files.join('\n');
       return `${result.path} (build123d ${result.version})\n${numberedLines(result.text, offset, limit)}`;
     }, {effect: 'run'}),
+  tool('build123d_quickref', 'A short reference to the parts of build123d models most often get wrong: selector operators, ' +
+    'algebra and builder modes, Rot order, extrude direction, Plane.XZ, and inputs that build silently wrong shapes. Read it ' +
+    'before writing a model with unfamiliar features.', {}, [], () => QUICKREF),
+  tool('check_fit', 'Check how the parts of the model on screen fit together: which overlap (and by how much volume, and ' +
+    'where), which touch, and which come closer than min_clearance. Use it for assemblies, after changing a part that ' +
+    'mates with another.',
+    {min_clearance: {type: 'number', minimum: 0, maximum: 1000, description: 'The gap parts must keep, mm. Defaults to 0: only overlaps and contact.'}}, [],
+    (project, {min_clearance: clearance = 0}) => project.check('fit', {min_clearance: clearance}), {effect: 'run'}),
+  tool('check_printability', 'Check the model on screen for FDM 3D printing: walls thinner than min_wall (measured by rays ' +
+    'through the material) and overhangs steeper than max_overhang degrees from vertical (except what rests on the build ' +
+    'plate), per part, with where each is and its face index. Choose up for the print orientation.',
+    {part: string('One part\'s name; every solid part by default.'),
+      min_wall: {type: 'number', minimum: 0.05, maximum: 100, description: 'Thinnest wall that prints, mm. Defaults to 1.2.'},
+      max_overhang: {type: 'number', minimum: 0, maximum: 90, description: 'Steepest unsupported overhang, degrees from vertical. Defaults to 45.'},
+      up: point('The build direction, [x, y, z]. Defaults to [0, 0, 1].')}, [],
+    (project, {part, min_wall: wall = 1.2, max_overhang: overhang = 45, up = [0, 0, 1]}) =>
+      project.check('printability', {...(part ? {part} : {}), min_wall: wall, max_overhang: overhang, up}), {effect: 'run'}),
   tool('build123d_api', 'The installed build123d\'s exact signature and docstring for a name (Box, fillet, BuildPart, Axis.Z, ' +
     'Location.position), and where it is defined; for a class, its own members too. With search, finds names whose name or summary matches a regular ' +
     'expression. With neither, lists every public name. The first use in the browser may wait for Python to load.',
