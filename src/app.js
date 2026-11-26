@@ -373,7 +373,7 @@ async function run({saveHelpers=false,target}={}){
    cad.render(result.scene);importedModel=false;lastScene={version:1,build:token,name:basename(runningFile),scene:retained};
    lastAttempt={id:token,target:project.relative(runningFile),status:'success',elapsed:result.elapsed,outputStart};$('empty-state').hidden=true;hasModel=true;canExport=true;builtFilename=runningFile;
    builtSnapshot=runningSnapshot;
-   $('model-state').textContent='result';$('model-state').title=runningFile;$('elapsed').textContent=result.elapsed.toFixed(2)+'s';status('Ready');log(`Built in ${result.elapsed.toFixed(2)}s`);
+   $('model-state').textContent='result';$('model-state').title=runningFile;$('elapsed').textContent=result.elapsed.toFixed(2)+'s';status('Ready');log(`Built in ${result.elapsed.toFixed(2)}s`+(result.phases?` (model ${result.phases.model.toFixed(2)}s, preview ${result.phases.preview.toFixed(2)}s)`:''));
  }catch(e){if(token!==generation)return;error(e);
    lastAttempt={id:token,target:project.relative(runningFile),status:'failed',error:$('error-message').textContent,locations:showTraceback(e.message),outputStart};status('Build failed');$('model-state').textContent=hasModel?'Last successful model':'No model yet';}
  finally{if(token===generation){busy=false;sync();buttons();}}

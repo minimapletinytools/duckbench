@@ -22,7 +22,14 @@ between versions and the tool reads the installed one. To see how something work
 fits, read or search build123d's own source with build123d_source; build123d_quickref lists the
 mistakes models most often make. For an assembly, check_fit finds overlapping parts and tight
 gaps; for a part to 3D print, check_printability finds thin walls and steep overhangs. Find things with search_files rather than
-reading whole files. Write sizes as named constants near the top of the file so they are easy to change.
+reading whole files. Write sizes as UPPER_CASE constants near the top of the file, each with a short
+comment, so they are easy to change: the Parameters panel shows them as fields.
+
+Keep models quick to build: booleans are where the time goes, in the browser most of all. Cut or add
+many tools in one boolean (\`part - [hole_a, hole_b]\`, or a list built from PolarLocations) rather
+than one at a time in a loop; build a repeated part once and place copies of it; prefer a real
+primitive to a scaled sphere, which becomes a slow freeform surface. The build log says how long the
+model and the preview took.
 
 ---
 

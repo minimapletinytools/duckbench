@@ -25,6 +25,23 @@ def _decode(instances, node):
             part["shape"] = instances[part["shape"]["ref"]]
 
 
+# The big arrays travel as base64 of their bytes (little-endian), not as JSON numbers: a tenth of the
+# size, and decoded straight into typed arrays (src/viewer/scene.js). Small ones stay lists.
+_PACKED = {"vertices": "float32", "normals": "float32", "edges": "float32", "obj_vertices": "float32", "triangles": "uint32"}
+
+
+def _pack(instance):
+    import base64
+    import numpy as np
+    packed = dict(instance)
+    for key, dtype in _PACKED.items():
+        value = packed.get(key)
+        if isinstance(value, np.ndarray) and value.size > 64:
+            data = np.ascontiguousarray(value, dtype=dtype).astype("<" + np.dtype(dtype).str[1:], copy=False)
+            packed[key] = {"dtype": dtype, "b64": base64.b64encode(data.tobytes()).decode("ascii")}
+    return packed
+
+
 def _holes(shape):
     """Round holes of a located shape: concave cylindrical faces bounded by a full circle, for ⌀ labels."""
     from build123d import GeomType, Vector
@@ -72,6 +89,7 @@ def cad_scene(shape):
 
     group, instances = to_ocpgroup(shape)
     instances, scene, mapping = tessellate_group(group, instances)
+    instances = [_pack(instance) for instance in instances]
     _decode(instances, scene)
     scene = json.loads(numpy_to_js(None, scene))
     leaves = {leaf["id"]: _located(leaf) for leaf in _leaves(mapping)}

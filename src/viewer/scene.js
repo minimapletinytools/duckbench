@@ -27,6 +27,29 @@ function pickMaterial(options = {}) {
     uniforms: {pointSize: {value: options.pointSize ?? 1}}, ...options.extra});
 }
 
+const TYPED = {float32: Float32Array, uint32: Uint32Array, int32: Int32Array};
+
+/** An array of the scene: a JSON list, or {dtype, b64} as python/viewer_import.py packs the big ones. */
+function unpack(value) {
+  if (!value || Array.isArray(value) || ArrayBuffer.isView(value) || !value.b64) return value;
+  const Type = TYPED[value.dtype];
+  if (!Type) throw new Error('Unsupported array type ' + value.dtype + ' in the scene.');
+  let bytes;
+  if (typeof Uint8Array.fromBase64 === 'function') bytes = Uint8Array.fromBase64(value.b64);
+  else {
+    const text = atob(value.b64);
+    bytes = new Uint8Array(text.length);
+    for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
+  }
+  return new Type(bytes.buffer, bytes.byteOffset, bytes.byteLength / Type.BYTES_PER_ELEMENT);
+}
+
+function unpackShape(shape = {}) {
+  const out = {...shape};
+  for (const key of ['vertices', 'normals', 'edges', 'obj_vertices', 'triangles']) if (out[key]) out[key] = unpack(out[key]);
+  return out;
+}
+
 function localMatrix(loc) {
   const matrix = new THREE.Matrix4();
   if (!Array.isArray(loc)) return matrix;
@@ -64,7 +87,7 @@ export function buildScene(data, {materials}) {
   }
 
   function buildLeaf(node, matrix, index) {
-    const shape = node.shape || {};
+    const shape = unpackShape(node.shape);
     const group = new THREE.Group(), pickGroup = new THREE.Group();
     for (const g of [group, pickGroup]) { g.matrixAutoUpdate = false; g.matrix.copy(matrix); g.matrixWorldNeedsUpdate = true; }
     const color = typeof node.color === 'string' && !DEFAULT_COLORS.has(node.color.toLowerCase()) ? node.color : null;
@@ -78,7 +101,7 @@ export function buildScene(data, {materials}) {
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(shape.vertices, 3));
       if (shape.normals?.length === shape.vertices.length) geometry.setAttribute('normal', new THREE.Float32BufferAttribute(shape.normals, 3));
       else geometry.computeVertexNormals();
-      geometry.setIndex(shape.triangles);
+      geometry.setIndex(Array.isArray(shape.triangles) ? shape.triangles : new THREE.BufferAttribute(Uint32Array.from(shape.triangles), 1));
       let start = 0;
       for (const count of shape.triangles_per_face || [shape.triangles.length / 3]) { leaf.faceStarts.push(start); start += count; }
       leaf.faceStarts.push(start);

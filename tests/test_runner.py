@@ -172,3 +172,30 @@ result = Compound(children=[base, post, cap, shelf, fin])
         self.assertTrue(only['ok'])
         with self.assertRaisesRegex(ValueError, 'No solid part'):
             runner.check_printability(51, part='Nothing')
+
+    def test_boolean_cache_reuses_results_without_sharing_attributes(self):
+        code = '''from build123d import *
+def wheel(name, color):
+    tire = Cylinder(10, 4) - Cylinder(6, 6)
+    for loc in PolarLocations(10, 12):
+        tire = tire - loc * Box(1, 1, 5)
+    tire.label = name
+    tire.color = Color(color)
+    return tire
+wheels = [Pos(30 * i, 0, 0) * wheel(f"Wheel {i}", c) for i, c in enumerate(["red", "blue", "green"])]
+result = Compound(children=wheels)
+'''
+        first = runner.run_model(code, 'cache.py', build_id=61)
+        # The second and third wheels repeat the first one's booleans.
+        self.assertGreaterEqual(first['booleans']['hits'], 26)
+        wheels = runner._last_result.children
+        self.assertEqual([w.label for w in wheels], ['Wheel 0', 'Wheel 1', 'Wheel 2'])
+        self.assertEqual(len({str(w.color) for w in wheels}), 3)
+        self.assertEqual(len({round(w.volume, 6) for w in wheels}), 1)
+        again = runner.run_model(code, 'cache.py', build_id=62)
+        self.assertEqual(again['booleans']['misses'], 0)
+        self.assertAlmostEqual(runner._last_result.volume, sum(w.volume for w in wheels), places=4)
+        # The scene's big arrays are packed as base64 of their bytes.
+        leaf = first['scene']['parts'][0]
+        self.assertEqual(leaf['shape']['vertices']['dtype'], 'float32')
+        self.assertIsInstance(leaf['shape']['segments_per_edge'], list)

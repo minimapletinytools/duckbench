@@ -15,6 +15,94 @@ try:
 except ImportError:  # In the browser, viewer_import's source is run into these globals after this one.
     pass
 
+# ---- Boolean cache ----
+# A model is rebuilt from scratch on every run, and often makes the same part several times (four
+# identical wheels) or keeps most parts unchanged between runs (a parameter changed elsewhere).
+# Booleans are where the kernel spends its time, and a boolean's result depends only on its inputs'
+# geometry and the operation's options. So results are kept by a digest of exactly those, and a later
+# boolean with the same inputs gets a fresh object around the same result, finished as build123d
+# finishes its own (the class, the first input's label and colour, the record of what was made).
+# Set DUCKBENCH_BOOLEAN_CACHE=0 to turn it off.
+_BOOLEAN_CACHE_LIMIT = 800
+_boolean_cache = None
+
+
+def _copy_history(history):
+    """A history of its own: build123d extends one in place, and a cached one is handed out again."""
+    if history is None:
+        return None
+    from OCP.BRepTools import BRepTools_History
+    from build123d.topology.history import ShapeHistory
+    copied = BRepTools_History()
+    copied.Merge(history.wrapped)
+    return ShapeHistory(copied, history.before, history.brought)
+
+
+def _shape_digest(topods):
+    import hashlib
+    import io
+    from OCP.BinTools import BinTools, BinTools_FormatVersion
+    buffer = io.BytesIO()
+    # Geometry only: the preview meshes the shapes it shows, and a mesh is no part of what a boolean makes.
+    BinTools.Write_s(topods, buffer, False, False, BinTools_FormatVersion.BinTools_FormatVersion_CURRENT)
+    return hashlib.blake2b(buffer.getvalue(), digest_size=20).digest()
+
+
+def _install_boolean_cache():
+    global _boolean_cache
+    if _boolean_cache is not None or os.environ.get("DUCKBENCH_BOOLEAN_CACHE") == "0":
+        return
+    from collections import OrderedDict
+    from OCP.TopoDS import TopoDS_Compound
+    from build123d import SkipClean
+    from build123d.topology import shape_core
+    original = shape_core.Shape._bool_op
+    _boolean_cache = cache = OrderedDict()
+    stats = _boolean_cache_stats
+
+    def options(operation):
+        try:
+            return (operation.FuzzyValue(), str(operation.Glue()), operation.NonDestructive(), operation.CheckInverted())
+        except Exception:
+            return None
+
+    def cached_bool_op(self, args, tools, operation):
+        args, tools = list(args), list(tools)
+        if not args or any(shape._wrapped is None for shape in args + tools):
+            return original(self, args, tools, operation)
+        settings = options(operation)
+        if settings is None:
+            return original(self, args, tools, operation)
+        try:
+            key = (type(operation).__name__, SkipClean.clean, settings,
+                   tuple(_shape_digest(shape.wrapped) for shape in args), tuple(_shape_digest(shape.wrapped) for shape in tools))
+        except Exception:
+            return original(self, args, tools, operation)
+        # The class of the result, as build123d picks it: the highest order among the inputs.
+        orders = {type(s): type(s).order for s in [self] + args + tools if hasattr(type(s), "order")}
+        highest = sorted(orders.items(), key=lambda item: item[1])[-1]
+        hit = cache.get(key)
+        if hit is not None:
+            cache.move_to_end(key)
+            stats["hits"] += 1
+            topods, history = hit
+            result = highest[0].cast(topods)
+            args[0].copy_attributes_to(result, ["wrapped", "_NodeMixin__children"])
+            return result._made_by(_copy_history(history))
+        stats["misses"] += 1
+        result = original(self, args, tools, operation)
+        # A result split into a composite of pieces is not kept: its pieces carry attributes of their own.
+        if result._wrapped is not None and not (isinstance(result.wrapped, TopoDS_Compound) and highest[1] != 4):
+            cache[key] = (result.wrapped, _copy_history(result._history))
+            if len(cache) > _BOOLEAN_CACHE_LIMIT:
+                cache.popitem(last=False)
+        return result
+
+    shape_core.Shape._bool_op = cached_bool_op
+
+
+_boolean_cache_stats = {"hits": 0, "misses": 0}
+
 _last_result = None
 _preview_results = {}
 # Each displayed build's leaves, by scene id, located: what a pick in the preview refers to.
@@ -31,6 +119,8 @@ def run_model(code, filename="model.py", build_id=None, displayed_build=None):
             del _preview_results[previous]
             _preview_leaves.pop(previous, None)
     from build123d import Shape, BuildPart, BuildSketch, BuildLine
+    _install_boolean_cache()
+    _boolean_cache_stats.update(hits=0, misses=0)
     start = time.perf_counter()
     path = Path(filename).resolve()
     for name in _project_modules:
@@ -47,6 +137,7 @@ def run_model(code, filename="model.py", build_id=None, displayed_build=None):
         sys.path.insert(0, str(path.parent))
         sys.argv = [str(path)]
         exec(compile(code, str(path), "exec"), namespace)
+        modelled = time.perf_counter()
         if "result" not in namespace:
             raise ValueError("Assign the model to a top-level 'result' variable.")
         result = namespace["result"]
@@ -57,11 +148,14 @@ def run_model(code, filename="model.py", build_id=None, displayed_build=None):
         if not isinstance(result, Shape) or result.wrapped is None:
             raise TypeError("result must be a build123d Shape or a completed BuildPart, BuildSketch or BuildLine. Use Compound(children=[...]) for assemblies.")
         scene, leaves = cad_scene(result)
+        shown = time.perf_counter()
         _last_result = result
         if build_id is not None:
             _preview_results[build_id] = result
             _preview_leaves[build_id] = leaves
-        return {"scene": scene, "elapsed": time.perf_counter() - start}
+        return {"scene": scene, "elapsed": time.perf_counter() - start,
+                "phases": {"model": modelled - start, "preview": shown - modelled},
+                "booleans": dict(_boolean_cache_stats)}
     finally:
         _project_modules = {name for name, mod in sys.modules.items()
                             if name not in before and getattr(mod, "__file__", None)

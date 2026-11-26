@@ -48,6 +48,10 @@ npm run package:viewer
 
 On Apple silicon the bundle is `release/viewer/mac-arm64/Duckbench Viewer.app`. Local macOS builds are unsigned. In the workbench, build a model and choose **Preview → Viewer HTML ↓** to share one offline, interactive file. Open the HTML directly in a WebGL-capable browser or in the desktop viewer. It contains the displayed geometry, its assembly tree, renderer and license notices. Source code and project history stay in the workbench. After a failed build the export uses the last successful preview.
 
+## Build speed
+
+Booleans are where builds spend their time. The runner keeps each boolean's result, keyed by a digest of its inputs' geometry and the operation's options, and gives a later boolean with the same inputs a fresh object around that result, finished as build123d finishes its own. Repeated parts (four identical wheels) and parts a change did not touch are not rebuilt: an unchanged rebuild of a model with a few hundred booleans takes under a second in the browser. Set `DUCKBENCH_BOOLEAN_CACHE=0` to turn it off on desktop. The scene's large arrays travel as base64 of their bytes rather than JSON numbers. The log reports each build's model and preview times.
+
 ## The 3D view
 
 The preview is Duckbench's own Three.js viewer (`src/viewer/`). Its camera controls follow Kigumi's; its grid, dimensions and prompting at a spot take ideas from [QuiCAD](https://github.com/ppietak/QuiCAD).
